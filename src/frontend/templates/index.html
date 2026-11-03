@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel Exfil | Tri-Layered Data Exfiltration Defense Platform</title>
+  <meta name="description" content="Production-grade hybrid OpenStack and Google Cloud Platform (GCP) Data Exfiltration Detection and Prevention System featuring Wire-Speed Rules, ML Anomaly Ensemble, and Cognitive Multi-Agent Swarm.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+
+  <!-- Top Header with Hybrid Cloud Telemetry -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-badge">🛡️</div>
+      <div class="brand-title">
+        <h1>SENTINEL DATA EXFILTRATION DEFENSE</h1>
+        <p>OPENSTACK EDGE (L1) &bull; GCP ML ENSEMBLE (L2) &bull; COGNITIVE AGENT SWARM (L3)</p>
+      </div>
+    </div>
+
+    <div class="cloud-telemetry-bar">
+      <div class="cloud-pill" id="openstack-status">
+        <div class="status-dot green"></div>
+        <span>OPENSTACK EDGE: ACTIVE (SR-IOV)</span>
+      </div>
+      <div class="cloud-pill" id="gcp-status">
+        <div class="status-dot blue"></div>
+        <span>GCP GKE + VERTEX: CONNECTED</span>
+      </div>
+      <div class="cloud-pill" id="worm-status">
+        <div class="status-dot cyan"></div>
+        <span>WORM LEDGER: SYNCED (SHA-256)</span>
+      </div>
+      <button class="btn btn-primary" id="btn-inject-seed" onclick="injectSeedStream()">
+        <span>⚡</span> Inject Telemetry Stream
+      </button>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <nav class="app-nav" aria-label="Main Navigation">
+    <button class="nav-tab active" data-tab="tab-stream" id="tab-btn-stream">
+      <span>📡</span> Live Wire-Speed Gateway
+    </button>
+    <button class="nav-tab" data-tab="tab-cases" id="tab-btn-cases">
+      <span>⚖️</span> Case Adjudication (HITL)
+    </button>
+    <button class="nav-tab" data-tab="tab-swarm" id="tab-btn-swarm">
+      <span>🧠</span> Multi-Agent Swarm Inspector
+    </button>
+    <button class="nav-tab" data-tab="tab-metrics" id="tab-btn-metrics">
+      <span>📊</span> 5-Tier Metrics Observatory
+    </button>
+    <button class="nav-tab" data-tab="tab-governance" id="tab-btn-governance">
+      <span>🔬</span> MLOps & LLMOps Governance
+    </button>
+    <button class="nav-tab" data-tab="tab-simulator" id="tab-btn-simulator">
+      <span>🎯</span> MITRE ATT&CK Attack Simulator
+    </button>
+  </nav>
+
+  <!-- Main Content Area -->
+  <main class="app-main">
+
+    <!-- TAB 1: Live Wire-Speed Gateway -->
+    <section class="tab-pane active" id="tab-stream">
+      <div class="panel-header">
+        <div>
+          <h2>OpenStack Edge Telemetry Bus & OCSF Normalizer</h2>
+          <p class="panel-subtitle">Wire-speed network taps, database audit trails, and tokenization proxy streaming to GCP</p>
+        </div>
+        <div class="header-actions">
+          <span class="badge badge-info" id="live-eps-badge">EPS: 1,450 events/s</span>
+          <span class="badge badge-success" id="transit-savings-badge">Bandwidth Saved: 84.2%</span>
+          <button class="btn btn-secondary" onclick="refreshTelemetry()">Refresh Stream</button>
+        </div>
+      </div>
+
+      <div class="telemetry-table-container">
+        <table class="data-table" id="telemetry-table">
+          <thead>
+            <tr>
+              <th>Event ID</th>
+              <th>Timestamp</th>
+              <th>Type</th>
+              <th>Source / User</th>
+              <th>Destination</th>
+              <th>Entropy</th>
+              <th>Volume / Records</th>
+              <th>Category</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="telemetry-tbody">
+            <tr><td colspan="9" class="loading-cell">Awaiting telemetry stream... Click 'Inject Telemetry Stream' above.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- TAB 2: Case Adjudication (HITL) -->
+    <section class="tab-pane" id="tab-cases">
+      <div class="panel-header">
+        <div>
+          <h2>Security Operations Center (SOC) Case Adjudication Cockpit</h2>
+          <p class="panel-subtitle">Human-in-the-Loop review, one-click containment execution, and anti-collusion audit verification</p>
+        </div>
+        <div class="header-actions">
+          <span class="badge badge-warning" id="pending-cases-badge">Pending HITL: 0</span>
+          <button class="btn btn-secondary" onclick="loadIncidents()">Refresh Cases</button>
+        </div>
+      </div>
+
+      <div class="cases-grid" id="cases-container">
+        <div class="empty-state">No active incidents awaiting review. Trigger an attack simulation or evaluate an event.</div>
+      </div>
+    </section>
+
+    <!-- TAB 3: Multi-Agent Swarm Inspector -->
+    <section class="tab-pane" id="tab-swarm">
+      <div class="panel-header">
+        <div>
+          <h2>Layer 3: Autonomous Multi-Agent Swarm Reasoning</h2>
+          <p class="panel-subtitle">Plan-and-Solve hypothesis decomposition, Graph-RAG enterprise queries, structured debate, and consensus</p>
+        </div>
+        <div class="header-actions">
+          <span class="badge badge-purple" id="active-swarm-case">Case: Active Deliberation</span>
+        </div>
+      </div>
+
+      <!-- Agent Swarm Visual Graph -->
+      <div class="swarm-topology">
+        <div class="agent-card orchestrator">
+          <div class="agent-header">
+            <span class="agent-icon">👑</span>
+            <div class="agent-meta">
+              <h3>Swarm Orchestrator</h3>
+              <span class="agent-role">Plan-and-Solve & Synthesis</span>
+            </div>
+          </div>
+          <p class="agent-desc">Manages multi-agent debate cycles, coordinates tool execution, computes risk consensus, and anchors cryptographic WORM signatures.</p>
+          <div class="agent-status-bar" id="orch-status">Status: Active Deliberation</div>
+        </div>
+
+        <div class="swarm-collaborators">
+          <div class="agent-card subagent">
+            <div class="agent-header">
+              <span class="agent-icon">🔍</span>
+              <div class="agent-meta">
+                <h4>Triage Agent</h4>
+                <span class="agent-role">Forensic Header & Process Tree</span>
+              </div>
+            </div>
+            <p class="agent-desc">Analyzes magic bytes, nested archive entropy, and parent-child execution hierarchies.</p>
+            <div class="agent-status-bar" id="triage-status">Tool: SandboxAnalyzerTool</div>
+          </div>
+
+          <div class="agent-card subagent">
+            <div class="agent-header">
+              <span class="agent-icon">🌐</span>
+              <div class="agent-meta">
+                <h4>Context & Correlation Agent</h4>
+                <span class="agent-role">Graph-RAG & Enterprise Context</span>
+              </div>
+            </div>
+            <p class="agent-desc">Queries IAM Entitlement graph, HR resignation timeline, Jira change orders, and peer baselines.</p>
+            <div class="agent-status-bar" id="correlation-status">Tool: GraphRAGRetrievalTool</div>
+          </div>
+
+          <div class="agent-card subagent">
+            <div class="agent-header">
+              <span class="agent-icon">⚖️</span>
+              <div class="agent-meta">
+                <h4>Compliance Auditor Agent</h4>
+                <span class="agent-role">Regulatory & Capital Liability</span>
+              </div>
+            </div>
+            <p class="agent-desc">Maps violations to PCI-DSS v4.0, GDPR, GLBA, and BCBS 239. Computes financial exposure.</p>
+            <div class="agent-status-bar" id="compliance-status">Tool: ComplianceKnowledgebaseTool</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Live Debate & Reflection Log -->
+      <div class="debate-container">
+        <h3>Swarm Deliberation & Evidence Citations</h3>
+        <div class="debate-feed" id="debate-feed">
+          <div class="debate-placeholder">Run an evaluation or attack simulation to observe live agent deliberation turns and citations.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: 5-Tier Metrics Observatory -->
+    <section class="tab-pane" id="tab-metrics">
+      <div class="panel-header">
+        <div>
+          <h2>Comprehensive 5-Tier Metrics Observatory</h2>
+          <p class="panel-subtitle">Multi-dimensional real-time quantification across Business, System, ML, RAG, and Agentic performance</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-secondary" onclick="loadMetrics()">Refresh Observatory</button>
+        </div>
+      </div>
+
+      <div class="metrics-grid">
+        <!-- 1. Business Metrics -->
+        <div class="metric-card">
+          <div class="metric-card-header">
+            <h3>1. Business & Risk Metrics</h3>
+            <span class="kpi-tag success">ROI & Risk</span>
+          </div>
+          <div class="kpi-stat">
+            <div class="kpi-value" id="kpi-loss-avoided">$2,500,000</div>
+            <div class="kpi-label">Capital Loss Avoided (Fines)</div>
+          </div>
+          <div class="metric-detail-list">
+            <div class="detail-row">
+              <span>MTTD (Mean Time to Detect):</span>
+              <strong id="kpi-mttd">0.75 min (&lt;2.0m SLA)</strong>
+            </div>
+            <div class="detail-row">
+              <span>MTTR (Mean Time to Respond):</span>
+              <strong id="kpi-mttr">2.10 min (&lt;5.0m SLA)</strong>
+            </div>
+            <div class="detail-row">
+              <span>SOC Analyst Fatigue Reduction:</span>
+              <strong id="kpi-fatigue">88.5% (&gt;=85% SLA)</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. System Performance Metrics -->
+        <div class="metric-card">
+          <div class="metric-card-header">
+            <h3>2. System & Wire-Speed Metrics</h3>
+            <span class="kpi-tag blue">Infrastructure</span>
+          </div>
+          <div class="kpi-stat">
+            <div class="kpi-value" id="kpi-p99-latency">24.5 ms</div>
+            <div class="kpi-label">P99 End-to-End Latency (&lt;1.5s SLA)</div>
+          </div>
+          <div class="metric-detail-list">
+            <div class="detail-row">
+              <span>L1 Rule Engine (OpenStack):</span>
+              <strong id="kpi-l1-latency">0.45 ms</strong>
+            </div>
+            <div class="detail-row">
+              <span>L2 ML Anomaly Inference (GCP):</span>
+              <strong id="kpi-l2-latency">18.2 ms</strong>
+            </div>
+            <div class="detail-row">
+              <span>Hybrid Edge Bandwidth Savings:</span>
+              <strong id="kpi-edge-savings">84.2% (&gt;=80% SLA)</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 3. Machine Learning Metrics -->
+        <div class="metric-card">
+          <div class="metric-card-header">
+            <h3>3. Machine Learning Metrics</h3>
+            <span class="kpi-tag purple">Math & Precision</span>
+          </div>
+          <div class="kpi-stat">
+            <div class="kpi-value" id="kpi-pr-auc">0.968</div>
+            <div class="kpi-label">PR-AUC (Extreme Imbalance)</div>
+          </div>
+          <div class="metric-detail-list">
+            <div class="detail-row">
+              <span>False Positive Rate @ 95% TPR:</span>
+              <strong id="kpi-fpr">0.0007 (&lt;0.001 SLA)</strong>
+            </div>
+            <div class="detail-row">
+              <span>Brier Calibration Score:</span>
+              <strong id="kpi-brier">0.0041 (Calibrated)</strong>
+            </div>
+            <div class="detail-row">
+              <span>Ensemble F1-Score:</span>
+              <strong id="kpi-f1">0.952</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 4. RAG Retrieval Metrics -->
+        <div class="metric-card">
+          <div class="metric-card-header">
+            <h3>4. Graph-RAG Retrieval Metrics</h3>
+            <span class="kpi-tag amber">Retrieval Quality</span>
+          </div>
+          <div class="kpi-stat">
+            <div class="kpi-value" id="kpi-rag-score">0.958</div>
+            <div class="kpi-label">Composite RAG Quality</div>
+          </div>
+          <div class="metric-detail-list">
+            <div class="detail-row">
+              <span>Context Retrieval Recall:</span>
+              <strong id="kpi-rag-recall">0.942</strong>
+            </div>
+            <div class="detail-row">
+              <span>Context Precision:</span>
+              <strong id="kpi-rag-precision">0.925</strong>
+            </div>
+            <div class="detail-row">
+              <span>Faithfulness (Grounded):</span>
+              <strong id="kpi-rag-faith">0.981</strong>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Agentic System Metrics -->
+        <div class="metric-card full-width">
+          <div class="metric-card-header">
+            <h3>5. Agentic System & Swarm Metrics</h3>
+            <span class="kpi-tag cyan">Reasoning Fidelity</span>
+          </div>
+          <div class="agentic-stat-row">
+            <div class="kpi-stat">
+              <div class="kpi-value" id="kpi-task-comp">98.7%</div>
+              <div class="kpi-label">Task Completion Rate</div>
+            </div>
+            <div class="kpi-stat">
+              <div class="kpi-value" id="kpi-traj-acc">0.975</div>
+              <div class="kpi-label">Tool Trajectory Accuracy</div>
+            </div>
+            <div class="kpi-stat">
+              <div class="kpi-value" id="kpi-hallucination">0.0004</div>
+              <div class="kpi-label">Hallucination Error (&lt;0.001 SLA)</div>
+            </div>
+            <div class="kpi-stat">
+              <div class="kpi-value" id="kpi-consensus-cycles">1.15</div>
+              <div class="kpi-label">Avg Consensus Cycles</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 5: MLOps & LLMOps Governance -->
+    <section class="tab-pane" id="tab-governance">
+      <div class="panel-header">
+        <div>
+          <h2>Continuous Governance, Drift Monitoring & Model Lifecycle</h2>
+          <p class="panel-subtitle">Population Stability Index (PSI), Wasserstein distance, concept drift, prompt templates, and automated retraining</p>
+        </div>
+        <div class="header-actions">
+          <button class="btn btn-warning" onclick="triggerRetraining()">⚡ Trigger Vertex AI Retraining</button>
+          <button class="btn btn-secondary" onclick="loadGovernance()">Refresh Governance</button>
+        </div>
+      </div>
+
+      <div class="governance-grid">
+        <!-- Drift Panel -->
+        <div class="gov-card">
+          <h3>Statistical Feature Drift (PSI & Wasserstein)</h3>
+          <div class="drift-metrics-box">
+            <div class="drift-stat">
+              <span class="drift-num" id="psi-value">0.042</span>
+              <span class="drift-lbl">Population Stability Index (PSI &lt; 0.25)</span>
+            </div>
+            <div class="drift-stat">
+              <span class="drift-num" id="wasserstein-value">0.038</span>
+              <span class="drift-lbl">Wasserstein Distance</span>
+            </div>
+            <div class="drift-stat">
+              <span class="drift-num" id="ks-stat-value">0.051 (p=0.48)</span>
+              <span class="drift-lbl">Kolmogorov-Smirnov Test</span>
+            </div>
+          </div>
+          <div class="status-indicator-box healthy" id="drift-status-box">
+            <span>✅ DATA & CONCEPT DRIFT: HEALTHY</span>
+            <small>Feature distributions match baseline training profile. Retraining idle.</small>
+          </div>
+        </div>
+
+        <!-- Production Model Registry -->
+        <div class="gov-card">
+          <h3>Production Model Registry (OpenStack Edge & GCP)</h3>
+          <div class="table-mini-container">
+            <table class="data-table-mini" id="model-registry-table">
+              <thead>
+                <tr>
+                  <th>Model ID</th>
+                  <th>Algorithm</th>
+                  <th>Version</th>
+                  <th>PR-AUC</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="model-registry-tbody">
+                <tr><td colspan="5">Loading registry...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- LLMOps Prompt Registry -->
+        <div class="gov-card full-width">
+          <h3>LLMOps Prompt Versioning & Cryptographic Registry</h3>
+          <div class="prompt-grid" id="prompt-templates-container">
+            <!-- Populated via JS -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 6: MITRE ATT&CK Attack Simulator -->
+    <section class="tab-pane" id="tab-simulator">
+      <div class="panel-header">
+        <div>
+          <h2>Breach & Attack Simulation (BAS) Launchpad</h2>
+          <p class="panel-subtitle">Execute scripted adversary tactics from MITRE ATT&CK Exfiltration (TA0010) and complex banking edge cases</p>
+        </div>
+      </div>
+
+      <div class="simulator-grid">
+        <div class="attack-card">
+          <div class="attack-badge red">MITRE T1048</div>
+          <h3>DNS Tunneling Exfiltration</h3>
+          <p>Adversary scripts transmission of core trade algos via base64 subdomains over recursive DNS queries to foreign C2.</p>
+          <button class="btn btn-danger" onclick="injectSimulation('t1048_dns_tunnel')">Launch Attack</button>
+        </div>
+
+        <div class="attack-card">
+          <div class="attack-badge red">MITRE T1567</div>
+          <h3>Burst Cloud Upload</h3>
+          <p>Off-hours burst extraction of 1.25M customer accounts staged in a 4.8GB encrypted 7-Zip archive egressing to untrusted IP.</p>
+          <button class="btn btn-danger" onclick="injectSimulation('t1567_burst_cloud')">Launch Attack</button>
+        </div>
+
+        <div class="attack-card">
+          <div class="attack-badge orange">MITRE T1029</div>
+          <h3>180-Day Drip Exfiltration</h3>
+          <p>Departing quantitative engineer queries 5 client records every 45 minutes to evade single-event volume thresholds.</p>
+          <button class="btn btn-warning" onclick="injectSimulation('t1029_drip_exfil')">Launch Attack</button>
+        </div>
+
+        <div class="attack-card">
+          <div class="attack-badge purple">HONEYTOKEN</div>
+          <h3>Canary Credit Card Breached</h3>
+          <p>Zero-tolerance trip: Read query accesses injected canary credit card (4532-0198-4421-9988) in cardholder records.</p>
+          <button class="btn btn-purple" onclick="injectSimulation('honeytoken_trip')">Launch Canary</button>
+        </div>
+
+        <div class="attack-card">
+          <div class="attack-badge amber">STEGANOGRAPHY</div>
+          <h3>LSB Image Steganography</h3>
+          <p>Cardholder database records encoded into the least-significant bits of a corporate PNG image. High Chi-square randomness.</p>
+          <button class="btn btn-warning" onclick="injectSimulation('media_steganography')">Launch Stego</button>
+        </div>
+
+        <div class="attack-card">
+          <div class="attack-badge red">INSIDER COLLUSION</div>
+          <h3>DBA + SOC Collusion</h3>
+          <p>DBA executes bulk pg_dump while rogue analyst marks alert closed. WORM append-only ledger prevents suppression.</p>
+          <button class="btn btn-danger" onclick="injectSimulation('insider_collusion')">Launch Collusion</button>
+        </div>
+
+        <div class="attack-card green-card">
+          <div class="attack-badge green">TRUE NEGATIVE VALIDATION</div>
+          <h3>Legitimate Regulatory Audit</h3>
+          <p>Lead analyst Samantha Liu extracts 3.5GB FinCEN regulatory ledger under approved Jira ticket REG-2026-8910.</p>
+          <button class="btn btn-success" onclick="injectSimulation('legitimate_bulk_audit')">Run Authorized Audit</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Incident Dossier Modal -->
+  <div class="modal-backdrop" id="incident-modal" style="display: none;">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <h3 id="modal-title">Incident Dossier</h3>
+        <button class="modal-close-btn" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-body" id="modal-body">
+        <!-- Populated via JS -->
+      </div>
+      <div class="modal-footer" id="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>
