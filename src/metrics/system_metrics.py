@@ -1,66 +1,69 @@
 """System and Operational Performance Metrics Calculator.
 
-Computes:
-1. End-to-End Pipeline Latency (P50, P90, P99) - Target: < 1.5s at P99
-2. Event Ingestion Throughput (EPS - Events Per Second)
-3. Hybrid Transit Cost Efficiency (% bandwidth reduction at OpenStack edge) - Target: >= 80%
-4. Ingestion Backpressure & Buffer Lag
+Computed from latencies the pipeline recorded. With no samples the figures are None.
+
+`hybrid_transit_cost_savings_pct` is the measured size reduction of the telemetry record after tokenization. It is not
+the bandwidth saved by not forwarding raw packet payloads: that depends on traffic the edge never sees in this
+deployment, and has to be measured where the edge sits.
 """
 
-import time
+import threading
+from typing import Any, Dict, List, Optional
+
 import numpy as np
-from typing import Any, Dict, List
+
 from src.core.config import settings
 from src.data_engineering.ingestion import ingestion_service
 from src.data_engineering.tokenizer import edge_tokenizer
 
+MAX_SAMPLES = 20_000
+
+
+def _p(samples: List[float], q: float) -> Optional[float]:
+    return round(float(np.percentile(np.array(samples), q)), 3) if samples else None
+
 
 class SystemMetricsCalculator:
-    """Measures wire-speed, cloud pipeline, and network transit performance."""
+    """Measures pipeline latency, ingestion rate and tokenization efficiency."""
 
     def __init__(self):
-        self.latency_samples_ms: List[float] = [12.4, 18.2, 25.1, 45.0, 95.2, 110.5, 340.0, 680.0]
-        self.l1_latency_samples_ms: List[float] = [0.15, 0.22, 0.35, 0.48, 0.72]
-        self.l2_latency_samples_ms: List[float] = [8.2, 11.5, 14.8, 22.0, 31.5]
+        self._lock = threading.Lock()
+        self.latency_samples_ms: List[float] = []
+        self.l1_latency_samples_ms: List[float] = []
+        self.l2_latency_samples_ms: List[float] = []
 
     def record_pipeline_latency(self, total_ms: float, l1_ms: float = 0.0, l2_ms: float = 0.0):
-        self.latency_samples_ms.append(total_ms)
-        if l1_ms > 0:
-            self.l1_latency_samples_ms.append(l1_ms)
-        if l2_ms > 0:
-            self.l2_latency_samples_ms.append(l2_ms)
+        with self._lock:
+            for samples, value in ((self.latency_samples_ms, total_ms), (self.l1_latency_samples_ms, l1_ms), (self.l2_latency_samples_ms, l2_ms)):
+                if value > 0:
+                    samples.append(value)
+                    if len(samples) > MAX_SAMPLES:
+                        del samples[: MAX_SAMPLES // 2]
 
     def calculate_metrics(self) -> Dict[str, Any]:
-        latencies = np.array(self.latency_samples_ms)
-        p50 = float(np.percentile(latencies, 50))
-        p90 = float(np.percentile(latencies, 90))
-        p99 = float(np.percentile(latencies, 99))
-
-        l1_p99 = float(np.percentile(np.array(self.l1_latency_samples_ms), 99))
-        l2_p99 = float(np.percentile(np.array(self.l2_latency_samples_ms), 99))
-
-        # Hybrid transit cost savings from tokenizer
-        transit_savings = edge_tokenizer.get_aggregate_savings()
-
-        # Ingestion EPS and backpressure from ingestion service
-        current_eps = ingestion_service.get_current_eps()
-        backpressure = ingestion_service.get_backpressure_ratio()
-
-        return {
-            "p50_latency_ms": round(p50, 2),
-            "p90_latency_ms": round(p90, 2),
-            "p99_latency_ms": round(p99, 2),
-            "p99_sla_target_sec": settings.LATENCY_SLA_P99_SECONDS,
-            "p99_sla_met": bool((p99 / 1000.0) <= settings.LATENCY_SLA_P99_SECONDS),
-            "l1_rule_evaluation_p99_ms": round(l1_p99, 3),
-            "l2_ml_inference_p99_ms": round(l2_p99, 2),
-            "ingestion_throughput_eps": max(1250.0, current_eps),
-            "hybrid_transit_cost_savings_pct": transit_savings,
-            "hybrid_transit_target_met": bool(transit_savings >= 80.0),
-            "ingestion_backpressure_ratio": backpressure,
+        with self._lock:
+            p99 = _p(self.latency_samples_ms, 99)
+            report = {
+                "measured": bool(self.latency_samples_ms),
+                "samples": len(self.latency_samples_ms),
+                "p50_latency_ms": _p(self.latency_samples_ms, 50),
+                "p90_latency_ms": _p(self.latency_samples_ms, 90),
+                "p99_latency_ms": p99,
+                "p99_sla_target_sec": settings.LATENCY_SLA_P99_SECONDS,
+                "p99_sla_met": None if p99 is None else bool(p99 / 1000.0 <= settings.LATENCY_SLA_P99_SECONDS),
+                "l1_rule_evaluation_p99_ms": _p(self.l1_latency_samples_ms, 99),
+                "l2_ml_inference_p99_ms": _p(self.l2_latency_samples_ms, 99),
+            }
+        savings = edge_tokenizer.get_aggregate_savings()
+        report.update({
+            "ingestion_throughput_eps": ingestion_service.get_current_eps(),
+            "hybrid_transit_cost_savings_pct": savings,
+            "hybrid_transit_target_met": None if savings is None else bool(savings >= settings.HYBRID_TRANSIT_SAVINGS_TARGET * 100.0),
+            "ingestion_backpressure_ratio": ingestion_service.get_backpressure_ratio(),
             "active_openstack_kafka_cluster": settings.OPENSTACK_KAFKA_BROKERS,
             "active_gcp_pubsub_topic": settings.PUBSUB_TOPIC,
-        }
+        })
+        return report
 
 
 system_metrics = SystemMetricsCalculator()

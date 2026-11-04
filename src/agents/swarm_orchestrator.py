@@ -12,6 +12,7 @@ from src.agents.triage_agent import triage_agent
 from src.core.config import settings
 from src.core.crypto_audit import worm_ledger
 from src.core.models import (
+    AgentToolExecution,
     FeatureVector,
     IncidentDossier,
     Layer1Evaluation,
@@ -21,6 +22,8 @@ from src.core.models import (
     TelemetryEvent,
 )
 from src.core.telemetry import TelemetryTimer, logger
+from src.metrics.agentic_metrics import agentic_metrics
+from src.metrics.rag_metrics import rag_metrics
 
 
 class SwarmOrchestrator:
@@ -73,76 +76,96 @@ class SwarmOrchestrator:
             state = self.correlation.investigate(state)
             state = self.compliance.investigate(state)
 
-            # 3. Consensus Synthesis and Debate Cycles
+            # 3. Decision. Only evidence is used. `event.category` is a label chosen by the sender of the telemetry
+            #    and is deliberately ignored: trusting it would let anyone who can post an event choose the verdict.
             consensus_cycles = 1
-            has_ticket = state.graph_rag_evidence.get("has_approved_change_ticket", False)
-            resigned = state.graph_rag_evidence.get("resignation_status", {}).get("resigned", False)
+            evidence = state.graph_rag_evidence
+            has_ticket = evidence.get("has_approved_change_ticket", False)
+            resigned = evidence.get("resignation_status", {}).get("resigned", False)
             is_honey = layer1_eval.is_honeytoken_hit
-            is_c2 = layer1_eval.is_known_c2
+            hard_indicator = is_honey or layer1_eval.is_known_c2 or layer1_eval.is_edm_exact_match
+            data_violation = layer1_eval.is_regex_compliance_hit or layer1_eval.is_stego_detected
+            score = layer2_eval.ensemble_risk_score
+            is_bulk = event.record_count >= settings.BULK_RECORD_THRESHOLD or event.bytes_out >= settings.BULK_BYTES_THRESHOLD
+            unauthorized_bulk = is_bulk and not has_ticket
+            corroboration = [
+                name for name, present in (
+                    ("departing employee", resigned),
+                    ("access without entitlement or staging tool off hours", feature_vector.privileged_role_hop),
+                    ("off-hours activity", feature_vector.is_off_hours),
+                    ("sensitive data or concealed payload", data_violation),
+                    ("bulk transfer with no valid change ticket", unauthorized_bulk),
+                ) if present
+            ]
+            hard_names = [n for n, p in (("honeytoken", is_honey), ("known C2", layer1_eval.is_known_c2), ("proprietary file match", layer1_eval.is_edm_exact_match)) if p]
+            signals = (
+                f"ensemble score {score:.2f}; hard indicators: {', '.join(hard_names) or 'none'}; "
+                f"corroboration: {', '.join(corroboration) or 'none'}"
+            )
+            containment: Dict[str, Any] = {}
 
-            # Reflection and debate logic:
-            if has_ticket and not (is_honey or is_c2):
-                # Valid change ticket with clean destination: True Negative
-                verdict = "LEGITIMATE_BULK_OPERATION"
-                severity = SeverityLevel.LOW
-                final_risk_score = 0.12
+            # A valid ticket explains bulk activity, but never overrides a hard indicator, a departing employee,
+            # sensitive-data or concealment findings, or an extreme score. Those go to a human, not to the bin.
+            ticket_explains_it = has_ticket and not (hard_indicator or resigned or data_violation or score >= settings.HIGH_CONFIDENCE_MALICIOUS_THRESHOLD)
+
+            if ticket_explains_it:
+                ticket = evidence["approved_tickets"][0]
+                verdict, severity = "LEGITIMATE_BULK_OPERATION", SeverityLevel.LOW
+                final_risk_score = round(min(0.30, score * 0.5), 2)
                 rem_status = RemediationStatus.DISMISSED_BENIGN
                 primary_hyp = "H1: Authorized Regulatory or Scheduled Corporate Bulk Operation"
                 root_cause = (
-                    f"Verified valid regulatory reporting transfer under ticket "
-                    f"{state.graph_rag_evidence['approved_tickets'][0]['ticket_id']}. No malicious indicators."
+                    f"Activity falls inside change ticket {ticket['ticket_id']} (valid at the time of the event, scoped to this data and "
+                    f"destination, not self-approved). No hard indicators. {signals}."
                 )
                 playbook = ["Auto-log to Compliance Audit Vault", "Adjust baseline volume parameters"]
-            elif is_honey:
-                # Honeytoken trip: instant critical malicious
+            elif (
+                hard_indicator
+                or score >= settings.HIGH_CONFIDENCE_MALICIOUS_THRESHOLD
+                or (resigned and score >= 0.70)
+                or (unauthorized_bulk and score >= 0.70 and len(corroboration) >= 2)
+            ):
                 verdict = "MALICIOUS_EXFILTRATION"
-                severity = SeverityLevel.CRITICAL
-                final_risk_score = 1.00
-                rem_status = RemediationStatus.AUTO_MITIGATED
-                primary_hyp = "H2: Malicious Insider or Adversary Data Exfiltration"
-                root_cause = "Zero-tolerance breach: Canary honeytoken credit card records accessed and queried."
-                playbook = [
-                    "OpenStack Neutron: Sever outbound egress on host IP",
-                    "Okta/Cloud IAM: Invalidate user session and rotate credentials",
-                    "Vault: Revoke database dynamic lease",
-                ]
-                self.remediation.execute_containment_playbook(
-                    ip_address=event.source_ip,
-                    user_id=event.user_id or "anonymous",
-                    case_id=f"CASE-{event.event_id}",
-                )
-            elif is_c2 or (resigned and layer2_eval.ensemble_risk_score >= 0.70) or layer2_eval.ensemble_risk_score >= 0.85 or event.category == "insider_collusion":
-                # High confidence malicious threat
-                verdict = "MALICIOUS_EXFILTRATION"
-                severity = SeverityLevel.CRITICAL if layer2_eval.ensemble_risk_score >= 0.85 else SeverityLevel.HIGH
-                final_risk_score = max(0.88, layer2_eval.ensemble_risk_score)
-                rem_status = RemediationStatus.AUTO_MITIGATED
+                severity = SeverityLevel.CRITICAL if (is_honey or score >= settings.HIGH_CONFIDENCE_MALICIOUS_THRESHOLD or hard_indicator) else SeverityLevel.HIGH
+                final_risk_score = 1.0 if is_honey else max(0.88 if hard_indicator else 0.85, score)
                 primary_hyp = "H2: Malicious Insider or Adversary Data Exfiltration"
                 root_cause = (
-                    f"High-confidence exfiltration detected. User resignation flag={resigned}, "
-                    f"C2/Tunnel indicator={is_c2}, payload entropy={event.payload_entropy:.2f}, "
-                    f"category={event.category}."
+                    ("Zero-tolerance breach: a canary honeytoken record was accessed. " if is_honey else "High-confidence exfiltration. ")
+                    + f"{signals}. Payload entropy {event.payload_entropy:.2f}."
                 )
                 playbook = [
                     "OpenStack Neutron: Sever outbound egress on host IP",
                     "Okta/Cloud IAM: Invalidate user session and rotate credentials",
                     "Vault: Revoke database dynamic lease",
                 ]
-                self.remediation.execute_containment_playbook(
-                    ip_address=event.source_ip,
-                    user_id=event.user_id or "anonymous",
-                    case_id=f"CASE-{event.event_id}",
-                )
-            elif layer2_eval.ensemble_risk_score >= 0.65:
-                # Medium confidence: Flag for Human-in-the-Loop review
+                # Automatic containment needs strong evidence (a hard indicator or an extreme score). Anything weaker is recommended to a human.
+                auto_eligible = hard_indicator or score >= settings.HIGH_CONFIDENCE_MALICIOUS_THRESHOLD
+                if auto_eligible:
+                    containment = self.remediation.automated_containment(
+                        ip_address=event.source_ip,
+                        user_id=event.user_id or "anonymous",
+                        case_id=f"CASE-{event.event_id}",
+                    )
+                else:
+                    containment = {"mode": settings.AUTO_REMEDIATION_MODE, "executed": False, "effective": False,
+                                   "blocked_reason": "evidence does not meet the bar for automatic containment; analyst approval required",
+                                   "actions": []}
+                rem_status = RemediationStatus.AUTO_MITIGATED if containment.get("effective") else RemediationStatus.CONTAINMENT_RECOMMENDED
+                state.tool_executions.append(AgentToolExecution(
+                    tool_name="RemediationExecutionTool",
+                    parameters={"ip": event.source_ip, "user_id": event.user_id, "auto_eligible": auto_eligible},
+                    result={k: v for k, v in containment.items() if k != "actions"} | {"action_count": len(containment.get("actions", []))},
+                    latency_ms=sum(a.get("latency_ms", 0.0) for a in containment.get("actions", [])),
+                ))
+            elif score >= settings.ANOMALY_DISPATCH_THRESHOLD_TAU or data_violation or has_ticket:
                 verdict = "SUSPICIOUS_ANOMALY_PENDING_HITL"
                 severity = SeverityLevel.MEDIUM
-                final_risk_score = layer2_eval.ensemble_risk_score
+                final_risk_score = max(score, 0.65) if (data_violation or has_ticket) else score
                 rem_status = RemediationStatus.HITL_PENDING
                 primary_hyp = "H3: Accidental Data Spill / Non-Malicious Policy Violation"
                 root_cause = (
-                    f"Elevated ensemble anomaly score ({layer2_eval.ensemble_risk_score:.2f}). "
-                    f"Requires SOC Tier-2/Tier-3 human confirmation."
+                    f"Needs human confirmation. {signals}."
+                    + (" A change ticket exists but other findings prevent auto-dismissal." if has_ticket else "")
                 )
                 playbook = [
                     "Prompt user with step-up MFA challenge",
@@ -151,10 +174,10 @@ class SwarmOrchestrator:
             else:
                 verdict = "FALSE_POSITIVE"
                 severity = SeverityLevel.INFORMATIONAL
-                final_risk_score = layer2_eval.ensemble_risk_score
+                final_risk_score = score
                 rem_status = RemediationStatus.DISMISSED_BENIGN
                 primary_hyp = "H1: Authorized Regulatory or Scheduled Corporate Bulk Operation"
-                root_cause = "Statistical variance within acceptable operational parameters."
+                root_cause = f"Statistical variance within acceptable operational parameters. {signals}."
                 playbook = ["Close alert automatically", "Update peer group baseline"]
 
             # Aggregate all citations
@@ -182,6 +205,7 @@ class SwarmOrchestrator:
                 "citations": all_citations,
                 "remediation_status": rem_status.value,
                 "remediation_playbook": playbook,
+                "containment": {k: v for k, v in containment.items() if k != "actions"},
                 "consensus_cycles": consensus_cycles,
                 "total_pipeline_latency_ms": round(timer.elapsed_ms, 2),
             }
@@ -192,6 +216,8 @@ class SwarmOrchestrator:
             dossier = IncidentDossier(
                 case_id=case_id,
                 event_id=event.event_id,
+                subject_ip=event.source_ip,
+                subject_user_id=event.user_id,
                 timestamp=dossier_dict["timestamp"],
                 verdict=verdict,
                 severity=severity,
@@ -206,10 +232,17 @@ class SwarmOrchestrator:
                 debate_turns=state.debate_turns,
                 tool_executions=state.tool_executions,
                 worm_immutable_hash=worm_hash,
+                containment=containment,
                 consensus_cycles=consensus_cycles,
                 total_pipeline_latency_ms=round(timer.elapsed_ms, 2),
             )
             state.final_dossier = dossier
+
+            agentic_metrics.record_investigation(completed=True, tool_calls=len(state.tool_executions), cycles=consensus_cycles)
+            rag_metrics.record_retrieval(
+                has_valid_ticket=has_ticket,
+                rejected_reasons=[r["reason"].split(" (")[0][:80] for r in evidence.get("rejected_tickets", [])],
+            )
 
         logger.info(
             "swarm_investigation_completed",

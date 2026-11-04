@@ -1,0 +1,30 @@
+{
+  "tickets": [
+    {
+      "ticket_id": "REG-2026-8910",
+      "requester_id": "usr_analyst_3030",
+      "approver": "Arthur Pendelton (General Counsel)",
+      "title": "Quarterly FinCEN & OCC Bulk Regulatory Ledger Submission",
+      "status": "APPROVED",
+      "category": "Regulatory Audit",
+      "approved_target_subnets": ["192.0.2.100/32", "198.51.100.5/32"],
+      "approved_tables": ["quarterly_regulatory_staging", "customer_accounts_master"],
+      "valid_from": "2026-09-01T00:00:00Z",
+      "valid_until": "2026-09-30T23:59:59Z",
+      "digital_signature_hash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "ticket_id": "CHG-2026-4421",
+      "requester_id": "usr_dba_1022",
+      "approver": "Elena Rostov (VP Infrastructure)",
+      "title": "Database Index Rebuild and Cold Backup Maintenance",
+      "status": "APPROVED",
+      "category": "Scheduled Maintenance",
+      "approved_target_subnets": ["10.240.200.0/24"],
+      "approved_tables": ["core_ledger"],
+      "valid_from": "2026-09-14T02:00:00Z",
+      "valid_until": "2026-09-14T06:00:00Z",
+      "digital_signature_hash": "f4c0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852c966"
+    }
+  ]
+}

@@ -11,6 +11,8 @@ from src.data_engineering.feature_store import feature_store
 from src.data_engineering.ingestion import ingestion_service
 from src.data_engineering.lakehouse_sink import lakehouse_sink
 from src.data_engineering.tokenizer import edge_tokenizer
+from src.core.baseline import feature_array
+from src.mlops.drift_detector import drift_detector
 
 
 class DataEngineeringPipeline:
@@ -34,7 +36,10 @@ class DataEngineeringPipeline:
             # 3. GCP Sliding-Window Feature Extraction
             features = self.feature_store.extract_features(event)
 
-            # 4. Asynchronous Lakehouse write
+            # 4. Feed the live window that drift monitoring compares against the benign baseline
+            drift_detector.record_feature_vector(feature_array(features))
+
+            # 5. Asynchronous Lakehouse write
             self.lakehouse.write_event(event)
 
         logger.debug(

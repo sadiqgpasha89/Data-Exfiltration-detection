@@ -9,6 +9,8 @@ Executes microsecond evaluations across:
 
 import time
 from typing import Dict
+from src.core.config import settings
+from src.core.honeytokens import canary_registry
 from src.core.models import Layer1Evaluation, TelemetryEvent
 from src.core.telemetry import TelemetryTimer
 from src.datascience.tier1_rules.edm_matcher import edm_matcher
@@ -36,9 +38,12 @@ class Tier1RuleEngine:
             is_honey = False
 
             # 1. Honeytoken check (Zero-tolerance trip)
-            if event.query and "4532-0198-4421-9988" in event.query:
+            canaries = canary_registry.match(event.query, event.raw_payload)
+            if canaries:
                 is_honey = True
-                triggered.append("CRITICAL: Honeytoken canary credit card access detected")
+                for canary in canaries:
+                    canary_registry.record_trip(canary["canary_id"], event.user_id)
+                    triggered.append(f"CRITICAL: Honeytoken canary {canary['canary_id']} ({canary['record_type']}) accessed")
 
             # 2. Exact Data Match (EDM)
             if event.file_hash_sha256 and self.edm.is_exact_match(event.file_hash_sha256):
@@ -66,10 +71,11 @@ class Tier1RuleEngine:
 
             # 5. Stego & Entropy check
             has_stego, entropy, chi_sq, stego_reason = self.stego.evaluate_payload(
-                raw_bytes=event.raw_payload.encode() if event.raw_payload else None,
+                raw_bytes=event.raw_payload.encode()[: settings.MAX_PAYLOAD_SCAN_CHARS] if event.raw_payload else None,
                 entropy_score=event.payload_entropy,
                 chi_square_score=event.chi_square_randomness,
                 file_name=event.file_name,
+                size_bytes=event.bytes_out,
             )
             if has_stego:
                 is_stego = True
@@ -80,7 +86,7 @@ class Tier1RuleEngine:
                 action = "HARD_DROP"
             elif is_edm or is_compliance or is_stego:
                 action = "FLAG_DEEP_INSPECTION"
-            elif event.bytes_out > 10000000 or event.payload_entropy > 7.0:
+            elif event.bytes_out > 10_000_000 or event.payload_entropy > 7.0:
                 action = "FLAG_DEEP_INSPECTION"
             else:
                 action = "PASS_THROUGH"

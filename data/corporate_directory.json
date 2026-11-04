@@ -1,0 +1,74 @@
+{
+  "employees": [
+    {
+      "user_id": "usr_dev_4091",
+      "name": "Marcus Vance",
+      "role": "Senior Quantitative Data Engineer",
+      "department": "Treasury & Risk Analytics",
+      "clearance": "Top Secret / Financial",
+      "supervisor": "Dr. Sarah Jenkins",
+      "resignation_submitted": true,
+      "resignation_date": "2026-08-28",
+      "peer_group": "data_engineering_quant",
+      "ip_assigned": "10.240.12.84",
+      "standard_work_hours": "09:00-18:00",
+      "allowed_databases": ["core_quant_models", "treasury_analytics"]
+    },
+    {
+      "user_id": "usr_dba_1022",
+      "name": "David Sterling",
+      "role": "Principal Database Administrator",
+      "department": "Core Infrastructure",
+      "clearance": "System Administrator",
+      "supervisor": "Elena Rostov",
+      "resignation_submitted": false,
+      "resignation_date": null,
+      "peer_group": "dba_admins",
+      "ip_assigned": "10.240.5.10",
+      "standard_work_hours": "08:00-19:00",
+      "allowed_databases": ["customer_accounts_master", "core_ledger", "cardholder_records"]
+    },
+    {
+      "user_id": "usr_soc_7821",
+      "name": "Frank Miller",
+      "role": "Tier 2 SOC Security Analyst",
+      "department": "Cyber Defense Operations",
+      "clearance": "Security Operations",
+      "supervisor": "Elena Rostov",
+      "resignation_submitted": false,
+      "resignation_date": null,
+      "peer_group": "soc_analysts",
+      "ip_assigned": "10.240.20.15",
+      "standard_work_hours": "12:00-21:00",
+      "allowed_databases": ["siem_audit_logs", "zeek_traffic_archive"]
+    },
+    {
+      "user_id": "usr_analyst_3030",
+      "name": "Samantha Liu",
+      "role": "Lead Regulatory Reporting Analyst",
+      "department": "Compliance & Legal",
+      "clearance": "Confidential",
+      "supervisor": "Arthur Pendelton",
+      "resignation_submitted": false,
+      "resignation_date": null,
+      "peer_group": "compliance_analysts",
+      "ip_assigned": "10.240.8.44",
+      "standard_work_hours": "08:30-17:30",
+      "allowed_databases": ["quarterly_regulatory_staging", "customer_accounts_master"]
+    },
+    {
+      "user_id": "usr_retail_5512",
+      "name": "Kevin Brooks",
+      "role": "Branch Operations Officer",
+      "department": "Retail Banking",
+      "clearance": "Standard",
+      "supervisor": "Arthur Pendelton",
+      "resignation_submitted": false,
+      "resignation_date": null,
+      "peer_group": "retail_officers",
+      "ip_assigned": "10.240.35.12",
+      "standard_work_hours": "09:00-17:00",
+      "allowed_databases": ["branch_teller_portal"]
+    }
+  ]
+}

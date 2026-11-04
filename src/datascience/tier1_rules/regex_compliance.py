@@ -9,14 +9,23 @@ Validates:
 import re
 from typing import Dict, List, Tuple
 
+from src.core.config import settings
+
 
 class RegexComplianceEngine:
     """Evaluates payload buffers against strict regulatory syntax and checksums."""
 
-    # Regex patterns
-    CC_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,19}\b")
-    SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+    # Regex patterns. Digits are matched in one pass with single optional separators (no nested lazy quantifiers), and a
+    # candidate must not be glued to other digits, so a long number is never scanned as several overlapping candidates.
+    CC_PATTERN = re.compile(r"(?<!\d)(?:\d[ -]?){12,18}\d(?!\d)")
+    SSN_PATTERN = re.compile(r"(?<!\d)\d{3}-\d{2}-\d{4}(?!\d)")
     IBAN_PATTERN = re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b")
+
+    @staticmethod
+    def ssn_plausible(ssn: str) -> bool:
+        """Rejects numbers the SSA never issues: area 000, 666 or 900-999, group 00, serial 0000."""
+        area, group, serial = ssn.split("-")
+        return area not in ("000", "666") and not area.startswith("9") and group != "00" and serial != "0000"
 
     def luhn_checksum_valid(self, card_number_str: str) -> bool:
         """Validates credit card number string using Luhn algorithm."""
@@ -64,6 +73,7 @@ class RegexComplianceEngine:
         }
         if not text:
             return findings
+        text = text[: settings.MAX_PAYLOAD_SCAN_CHARS]  # bound the work an attacker-sized payload can cause
 
         # Check for credit cards
         for match in self.CC_PATTERN.finditer(text):
@@ -75,7 +85,8 @@ class RegexComplianceEngine:
 
         # Check for SSNs
         for match in self.SSN_PATTERN.finditer(text):
-            findings["ssns"].append(match.group())
+            if self.ssn_plausible(match.group()):
+                findings["ssns"].append(match.group())
 
         # Check for IBANs
         for match in self.IBAN_PATTERN.finditer(text):

@@ -1,0 +1,39 @@
+{
+  "malicious_ips": [
+    "185.220.101.5",
+    "194.26.29.112",
+    "45.154.255.89",
+    "91.240.118.172",
+    "198.51.100.42",
+    "203.0.113.88"
+  ],
+  "malicious_domains": [
+    "c2-exfil-node.darknet.ru",
+    "pastebin-anonymizer.com",
+    "shadow-ai-prompt-eval.io",
+    "dns-tunnel-relay.xyz",
+    "leaked-bank-drop.onion.sh",
+    "mega-upload-api-proxy.net"
+  ],
+  "adversary_asns": [
+    "AS48031",
+    "AS200052",
+    "AS58224"
+  ],
+  "prohibited_database_egress_ports": [
+    22,
+    3389,
+    4444,
+    8088,
+    9001
+  ],
+  "monitored_database_subnets": [
+    "10.240.0.0/16",
+    "172.16.50.0/24"
+  ],
+  "proprietary_file_hashes_sha256": [
+    "a591a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f146e",
+    "b891a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f257f",
+    "c791a6d40bf420404a011733cfb7b190d62c65bf0bcda32b57b277d9ad9f368a"
+  ]
+}

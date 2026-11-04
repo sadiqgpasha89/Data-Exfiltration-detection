@@ -25,7 +25,7 @@ class UnifiedMetricsEngine:
             "ml_metrics": self.ml.calculate_metrics(),
             "rag_metrics": self.rag.calculate_metrics(),
             "agentic_metrics": self.agentic.calculate_metrics(),
-            "status": "HEALTHY",
+            "status": "OK",
         }
 
 

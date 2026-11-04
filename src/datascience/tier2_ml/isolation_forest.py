@@ -7,6 +7,7 @@ identify multi-dimensional outliers in wire-speed event streams.
 import numpy as np
 from sklearn.ensemble import IsolationForest
 from src.core.models import FeatureVector
+from src.core.baseline import benign_baseline_matrix, feature_array
 
 
 class TabularIsolationForestModel:
@@ -17,50 +18,29 @@ class TabularIsolationForestModel:
             n_estimators=100,
             contamination=contamination,
             random_state=random_state,
-            n_jobs=-1,
+            n_jobs=1,  # per-event scoring is tiny: a process-wide thread pool only adds latency
         )
+        self.random_state = random_state
         self.is_fitted = False
+        self._boundary = 0.0
+        self._scale = 0.1
         self._fit_initial_baseline()
 
     def _feature_vector_to_array(self, fv: FeatureVector) -> np.ndarray:
         """Converts FeatureVector into numeric vector."""
-        return np.array([
-            math_log_ratio := float(np.log1p(max(0.0, fv.bytes_out_in_ratio))),
-            float(fv.connection_frequency_15m),
-            float(fv.payload_entropy),
-            float(fv.historical_deviation_score),
-            float(fv.destination_cardinality_1h),
-            float(fv.rolling_read_to_export_ratio_180d),
-            1.0 if fv.is_off_hours else 0.0,
-            1.0 if fv.privileged_role_hop else 0.0,
-        ], dtype=np.float32).reshape(1, -1)
+        return feature_array(fv).astype(np.float32).reshape(1, -1)
 
     def _fit_initial_baseline(self):
         """Fits model on synthetic benign banking telemetry baseline."""
-        np.random.seed(42)
-        n_samples = 500
-        # Normal baseline features:
-        # low log ratio, low conn freq, low entropy, low deviation, 1-2 destinations, high read/export ratio, standard hours, no priv hop
-        log_ratios = np.random.normal(loc=1.5, scale=0.5, size=n_samples)
-        conn_freqs = np.random.poisson(lam=3, size=n_samples)
-        entropies = np.random.normal(loc=4.0, scale=0.8, size=n_samples)
-        dev_scores = np.random.beta(a=1, b=5, size=n_samples)
-        dest_cards = np.random.poisson(lam=2, size=n_samples)
-        read_exp_ratios = np.random.normal(loc=20.0, scale=3.0, size=n_samples)
-        off_hours = np.random.binomial(n=1, p=0.05, size=n_samples)
-        priv_hops = np.zeros(n_samples)
+        X_baseline = benign_baseline_matrix(500, self.random_state)
+        self.fit(X_baseline)
 
-        X_baseline = np.column_stack([
-            np.clip(log_ratios, 0, 10),
-            conn_freqs,
-            np.clip(entropies, 0, 8),
-            np.clip(dev_scores, 0, 1),
-            dest_cards,
-            np.clip(read_exp_ratios, 0, 100),
-            off_hours,
-            priv_hops,
-        ])
-        self.model.fit(X_baseline)
+    def fit(self, X: np.ndarray) -> None:
+        """Fits the forest and records where the benign boundary lies so scores are calibrated against it."""
+        self.model.fit(X)
+        raw = self.model.decision_function(X)
+        self._boundary = float(np.percentile(raw, 1))  # the 1st percentile of benign data is the edge of normal
+        self._scale = float(max(raw.std() * 0.5, 0.02))
         self.is_fitted = True
 
     def score_feature_vector(self, fv: FeatureVector) -> float:
@@ -69,12 +49,10 @@ class TabularIsolationForestModel:
         Higher score = more anomalous.
         """
         X = self._feature_vector_to_array(fv)
-        # raw decision function: negative values indicate outliers, positive indicate inliers
-        raw_score = self.model.decision_function(X)[0]
-        # Normalize into [0.0, 1.0] using sigmoid-like scaling
-        # In scikit-learn, typical decision_function range is [-0.5, 0.5]
-        normalized_score = 1.0 / (1.0 + np.exp(6.0 * raw_score))
-        return round(float(np.clip(normalized_score, 0.0, 1.0)), 4)
+        raw_score = float(self.model.decision_function(X)[0])
+        # 0.5 at the benign boundary, falling toward 0 for typical benign points and rising toward 1 for outliers
+        normalized = 1.0 / (1.0 + np.exp((raw_score - self._boundary) / self._scale))
+        return round(float(np.clip(normalized, 0.0, 1.0)), 4)
 
 
 # Global Isolation Forest model

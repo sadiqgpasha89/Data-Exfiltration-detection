@@ -3,11 +3,13 @@
 import pytest
 from fastapi.testclient import TestClient
 from src.api.main import app
+from tests.conftest import headers_for
 
 
 @pytest.fixture
-def client():
-    with TestClient(app) as test_client:
+def client(auth_keys):
+    """An administrator's client: these tests exercise behaviour; test_api_security.py exercises access control."""
+    with TestClient(app, headers=headers_for("admin")) as test_client:
         yield test_client
 
 
@@ -15,8 +17,8 @@ def test_health_check_endpoint(client):
     response = client.get("/healthz")
     assert response.status_code == 200
     data = response.json()
-    assert data["status"] == "HEALTHY"
-    assert "hybrid_topology" in data
+    assert data["status"] == "ok"
+    assert "version" in data
 
 
 def test_dashboard_html_endpoint(client):

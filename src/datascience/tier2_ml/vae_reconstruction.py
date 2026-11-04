@@ -1,108 +1,72 @@
-"""Autoencoder / Variational Autoencoder Reconstruction Error Model.
+"""PCA bottleneck autoencoder: reconstruction-error anomaly scorer.
 
-Trained on benign network transaction and query profiles.
-Calculates normalized reconstruction loss: L_reconstruction = ||x - x_hat||^2.
-Elevated reconstruction error flags zero-day and uncharacteristic exfiltration profiles.
+Despite the historical file name this is not a variational autoencoder. It is a linear bottleneck (principal
+components of benign telemetry) in NumPy: the features are standardized, projected onto `latent_dim` components and
+reconstructed. Behaviour unlike the benign baseline reconstructs badly, and the reconstruction error is the signal.
+
+Two defects of an earlier version are fixed here. The encoder applied a ReLU, which discards the sign of every latent
+coordinate and inflated the error of ordinary benign traffic by about a third. And standardization divided by
+(std + 1e-4): a feature that is constant in the baseline (the privileged-hop flag) turned a single 1 into a z-score of
+10,000, so that one flag saturated the score at 1.0 regardless of everything else. Standard deviations are now floored
+and z-scores are clipped.
 """
 
 import numpy as np
 from src.core.models import FeatureVector
+from src.core.baseline import benign_baseline_matrix, feature_array
+
+STD_FLOOR = 0.05
+Z_CLIP = 8.0
 
 
 class VAEReconstructionModel:
-    """Linear/bottleneck projection Autoencoder for continuous feature reconstruction."""
+    """Linear bottleneck autoencoder (PCA) with an error score calibrated against its own training distribution."""
 
     def __init__(self, input_dim: int = 8, latent_dim: int = 3, random_state: int = 42):
         self.input_dim = input_dim
         self.latent_dim = latent_dim
-        np.random.seed(random_state)
-
-        # Initialize weights: Encoder (input -> latent) and Decoder (latent -> input)
-        # Using orthonormal projection approximation
-        self.W_enc = np.random.randn(input_dim, latent_dim) * 0.1
-        self.b_enc = np.zeros(latent_dim)
-        self.W_dec = self.W_enc.T
-        self.b_dec = np.zeros(input_dim)
-
+        self.random_state = random_state
         self.mean = np.zeros(input_dim)
         self.std = np.ones(input_dim)
+        self.W_enc = np.zeros((input_dim, latent_dim))
+        self.W_dec = self.W_enc.T
+        self._log_mse_mean = 0.0
+        self._log_mse_std = 1.0
         self._fit_initial_baseline()
 
-    def _feature_vector_to_array(self, fv: FeatureVector) -> np.ndarray:
-        return np.array([
-            float(np.log1p(max(0.0, fv.bytes_out_in_ratio))),
-            float(fv.connection_frequency_15m),
-            float(fv.payload_entropy),
-            float(fv.historical_deviation_score),
-            float(fv.destination_cardinality_1h),
-            float(fv.rolling_read_to_export_ratio_180d),
-            1.0 if fv.is_off_hours else 0.0,
-            1.0 if fv.privileged_role_hop else 0.0,
-        ], dtype=np.float32)
+    def _standardize(self, X: np.ndarray) -> np.ndarray:
+        return np.clip((X - self.mean) / self.std, -Z_CLIP, Z_CLIP)
+
+    def fit(self, X: np.ndarray) -> None:
+        """Learns the principal subspace of benign feature vectors and the error distribution used for calibration."""
+        self.mean = X.mean(axis=0)
+        self.std = np.maximum(X.std(axis=0), STD_FLOOR)
+        Xn = self._standardize(X)
+        _, _, vt = np.linalg.svd(Xn, full_matrices=False)
+        self.W_enc = vt[: self.latent_dim, :].T
+        self.W_dec = self.W_enc.T
+        errors = np.mean((Xn - Xn @ self.W_enc @ self.W_dec) ** 2, axis=1)
+        log_err = np.log(errors + 1e-9)
+        self._log_mse_mean = float(log_err.mean())
+        self._log_mse_std = float(max(log_err.std(), 1e-3))
 
     def _fit_initial_baseline(self):
-        """Simulates VAE baseline training on benign profiles using PCA-style reconstruction."""
-        np.random.seed(42)
-        n_samples = 500
-        # Realistic benign distributions:
-        # log_ratio: ~0.5 - 2.0
-        # conn_freq: ~1 - 5
-        # entropy: ~3.0 - 5.0
-        # dev_score: ~0.0 - 0.2
-        # dest_card: ~1 - 3
-        # read_to_export: ~15.0 - 30.0
-        # off_hours: ~0
-        # priv_hop: ~0
-        log_ratios = np.random.normal(loc=1.2, scale=0.4, size=n_samples)
-        conn_freqs = np.random.poisson(lam=3, size=n_samples)
-        entropies = np.random.normal(loc=4.0, scale=0.6, size=n_samples)
-        dev_scores = np.random.beta(a=1, b=8, size=n_samples)
-        dest_cards = np.random.poisson(lam=2, size=n_samples)
-        read_exp_ratios = np.random.normal(loc=22.0, scale=3.0, size=n_samples)
-        off_hours = np.random.binomial(n=1, p=0.03, size=n_samples)
-        priv_hops = np.zeros(n_samples)
+        """Fits on a synthetic benign profile. Replace with real benign telemetry via fit() before relying on the scores."""
+        X = benign_baseline_matrix(500, self.random_state)
+        self.fit(X)
 
-        X = np.column_stack([
-            np.clip(log_ratios, 0, 10),
-            conn_freqs,
-            np.clip(entropies, 0, 8),
-            np.clip(dev_scores, 0, 1),
-            dest_cards,
-            np.clip(read_exp_ratios, 0, 100),
-            off_hours,
-            priv_hops,
-        ])
-
-        self.mean = np.mean(X, axis=0)
-        self.std = np.std(X, axis=0) + 1e-4
-
-        # Standardize
-        X_norm = (X - self.mean) / self.std
-
-        # Learn encoder/decoder via SVD (Principal bottleneck)
-        u, s, vt = np.linalg.svd(X_norm, full_matrices=False)
-        self.W_enc = vt[:self.latent_dim, :].T  # input_dim x latent_dim
-        self.W_dec = self.W_enc.T               # latent_dim x input_dim
+    def reconstruction_error(self, fv: FeatureVector) -> float:
+        x = self._standardize(feature_array(fv))
+        return float(np.mean((x - x @ self.W_enc @ self.W_dec) ** 2))
 
     def compute_reconstruction_loss(self, fv: FeatureVector) -> float:
-        """Computes normalized reconstruction error ||x - x_hat||^2 in [0.0 - 1.0]."""
-        x_raw = self._feature_vector_to_array(fv)
-        x_norm = (x_raw - self.mean) / self.std
+        """Anomaly score in [0, 1]: the reconstruction error's distance from the benign error distribution, in log space.
 
-        # Encode: z = ReLU(x * W_enc)
-        z = np.maximum(0, np.dot(x_norm, self.W_enc))
-
-        # Decode: x_hat = z * W_dec
-        x_hat = np.dot(z, self.W_dec)
-
-        # Reconstruction error: mean squared error
-        mse = float(np.mean((x_norm - x_hat) ** 2))
-
-        # Normalize via sigmoid scaling [0.0, 1.0]
-        # For baseline, mse is ~0.1 - 0.5. For anomalous spikes, mse reaches 5.0 - 50.0.
-        norm_loss = 1.0 - (1.0 / (1.0 + 0.5 * mse))
-        return round(float(np.clip(norm_loss, 0.0, 1.0)), 4)
+        A benign vector scores near 0.07, a vector 2.5 standard deviations (log scale) above the benign mean scores 0.5.
+        """
+        z = (np.log(self.reconstruction_error(fv) + 1e-9) - self._log_mse_mean) / self._log_mse_std
+        return round(float(1.0 / (1.0 + np.exp(-(z - 2.5)))), 4)
 
 
-# Global VAE model
+# Global model
 vae_reconstruction_model = VAEReconstructionModel()

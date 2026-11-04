@@ -1,5 +1,7 @@
 """Context & Correlation Agent: Graph-RAG Traversal & Enterprise Context."""
 
+from datetime import datetime, timezone
+
 from src.agents.state import AgentInvestigationState
 from src.agents.tools.graph_rag_tool import graph_rag_tool
 from src.core.models import AgentDebateTurn, AgentToolExecution
@@ -15,11 +17,18 @@ class CorrelationAgent:
         event = state.event
         user_id = event.user_id or "anonymous"
 
+        try:  # tickets are judged against when the activity happened, not when it was investigated
+            event_time = datetime.fromisoformat(event.timestamp.replace("Z", "+00:00"))
+            event_time = event_time if event_time.tzinfo else event_time.replace(tzinfo=timezone.utc)
+        except ValueError:
+            event_time = datetime.now(timezone.utc)
+
         # Execute Graph-RAG Tool
         rag_result = self.tool.query_context(
             user_id=user_id,
             target_resource=event.query or event.file_name,
             destination_ip=event.destination_ip,
+            event_time=event_time,
         )
 
         # Log tool execution

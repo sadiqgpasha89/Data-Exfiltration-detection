@@ -9,6 +9,6 @@ __pycache__/
 coverage/
 .env
 .env.*
-data/
+/data/ledger/
 *.db
 *.sqlite*
