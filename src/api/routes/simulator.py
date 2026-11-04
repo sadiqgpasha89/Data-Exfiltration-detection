@@ -1,21 +1,18 @@
-"""MITRE ATT&CK & Evasion Attack Simulator API endpoints."""
+"""MITRE ATT&CK & Evasion Attack Simulator API endpoints (development and demos only)."""
 
 from typing import Any, Dict
-from fastapi import APIRouter, HTTPException
-from src.agents.swarm_orchestrator import swarm_orchestrator
-from src.data_engineering.pipeline import data_pipeline
-from src.datascience.tier1_rules import tier1_engine
-from src.datascience.tier2_ml import tier2_scorer
-from src.hitl.case_manager import case_manager
-from src.metrics.business_metrics import business_metrics
-from src.metrics.system_metrics import system_metrics
+from fastapi import APIRouter, Depends, HTTPException
+
+from src.api.pipeline_service import run_full_pipeline
+from src.core.config import settings
+from src.core.security import Principal, require
 from src.mlops.shadow_validator import shadow_validator
 
 router = APIRouter(prefix="/simulator", tags=["Simulator"])
 
 
 @router.post("/inject/{scenario_name}", response_model=Dict[str, Any])
-def inject_simulation_scenario(scenario_name: str):
+def inject_simulation_scenario(scenario_name: str, principal: Principal = Depends(require("simulate"))):
     """Executes a pre-configured MITRE ATT&CK or edge-case scenario:
 
     - 't1048_dns_tunnel'
@@ -26,6 +23,8 @@ def inject_simulation_scenario(scenario_name: str):
     - 'insider_collusion'
     - 'legitimate_bulk_audit'
     """
+    if not settings.simulator_enabled:
+        raise HTTPException(status_code=404, detail="Not found")
     if scenario_name == "t1048_dns_tunnel":
         raw_event = shadow_validator.generate_dns_tunnel_attack()
     elif scenario_name == "t1567_burst_cloud":
@@ -92,37 +91,5 @@ def inject_simulation_scenario(scenario_name: str):
     else:
         raise HTTPException(status_code=400, detail=f"Unknown scenario '{scenario_name}'")
 
-    # Run through full Tri-Layered detection pipeline
-    event, tokenized, features = data_pipeline.process_raw_event(raw_event)
-    l1_result = tier1_engine.evaluate(event)
-    l2_result = tier2_scorer.evaluate(event, features)
-
-    dossier = swarm_orchestrator.execute_investigation(
-        event=event,
-        feature_vector=features,
-        layer1_eval=l1_result,
-        layer2_eval=l2_result,
-    )
-    case_manager.add_dossier(dossier)
-
-    # Update business and system metrics
-    business_metrics.record_incident_resolution(
-        verdict=dossier.verdict,
-        detection_time_sec=0.08,
-        response_time_sec=0.25,
-        capital_risk_usd=dossier.estimated_capital_risk_usd,
-        is_hitl=(dossier.remediation_status.value == "HITL_PENDING"),
-    )
-    system_metrics.record_pipeline_latency(
-        total_ms=dossier.total_pipeline_latency_ms,
-        l1_ms=l1_result.evaluation_latency_ms,
-        l2_ms=l2_result.evaluation_latency_ms,
-    )
-
-    return {
-        "scenario_injected": scenario_name,
-        "event_id": event.event_id,
-        "layer1_evaluation": l1_result.model_dump(),
-        "layer2_evaluation": l2_result.model_dump(),
-        "incident_dossier": dossier.model_dump(),
-    }
+    result = run_full_pipeline(raw_event, force_investigation=True)
+    return {"scenario_injected": scenario_name, **result}

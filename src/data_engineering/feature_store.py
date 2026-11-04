@@ -1,123 +1,139 @@
 """Real-time Sliding-Window Feature Store.
 
-Simulates GCP Dataflow stateful processing writing to Vertex AI Feature Store.
-Computes short-term (1m, 15m, 1h, 24h) and long-term (30d, 180d) features
-specifically designed to detect both burst and low-and-slow ('drip') exfiltration.
+Simulates GCP Dataflow stateful processing writing to Vertex AI Feature Store. Short-term features are computed over
+true time windows (15 minutes, 1 hour, 24 hours) measured on the event's own timestamp, and a long-term read-to-export
+counter tracks low-and-slow ('drip') exfiltration.
+
+Memory is bounded: per-user event history is capped and evicted by age, users are evicted least-recently-used, and the
+feature cache is a fixed-size LRU. All mutation is guarded by a lock because the API serves requests from a thread pool.
 """
 
 import collections
 import math
-from datetime import datetime
-from typing import Dict, List, Optional
+import threading
+from datetime import datetime, timedelta, timezone
+from typing import Deque, Dict, Optional, Tuple
+
 from src.core.config import settings
 from src.core.models import FeatureVector, TelemetryEvent
+from src.data_engineering.graph_builder import iam_graph_builder
+
+WINDOW_15M = timedelta(minutes=15)
+WINDOW_1H = timedelta(hours=1)
+RETENTION = timedelta(hours=24)
+BUSINESS_HOURS_UTC = (8, 19)  # [start, end): outside this, or on a weekend, counts as off hours
+SUSPICIOUS_TOOLS = {"powershell.exe", "7z.exe", "pg_dump.exe"}
+EXPORT_EVENT_TYPES = {"database_dump", "batch_export", "file_egress"}
+NO_ENTITLEMENT = 0.6  # entitlement deviation at or above this means the user has no grant on the resource
+
+
+def parse_timestamp(value: str) -> datetime:
+    """Parses an ISO-8601 timestamp; a timestamp without a zone is read as UTC."""
+    dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 class StreamingFeatureStore:
-    """Sliding-window temporal aggregator maintaining user and IP state."""
+    """Sliding-window temporal aggregator maintaining user state."""
 
     def __init__(self):
-        # user_id -> list of recent events with timestamps
-        self.user_windows: Dict[str, collections.deque] = collections.defaultdict(
-            lambda: collections.deque(maxlen=1000)
-        )
-        # user_id -> long-term rolling cumulative counters (records_read, records_exported, days_active)
+        self._lock = threading.RLock()
+        # user_id -> (event time, destination ip) for the last 24h, most recent last
+        self.user_windows: "collections.OrderedDict[str, Deque[Tuple[datetime, str]]]" = collections.OrderedDict()
+        # user_id -> long-term rolling cumulative counters (records_read, records_exported, access_count)
         self.cumulative_drip_counters: Dict[str, Dict[str, float]] = collections.defaultdict(
             lambda: {"records_read": 100.0, "records_exported": 5.0, "access_count": 20}
         )
-        # Stored feature vectors
-        self.feature_cache: Dict[str, FeatureVector] = {}
+        self.feature_cache: "collections.OrderedDict[str, FeatureVector]" = collections.OrderedDict()
 
+    # ---- helpers ------------------------------------------------------------------------------------------
     def calculate_shannon_entropy(self, payload: str) -> float:
-        """Calculates Shannon entropy of a string buffer.
-
-        Entropy > 7.5 strongly indicates AES encryption, nested compression, or random hex.
-        """
+        """Shannon entropy of a string buffer in bits per character. Above 7.5 strongly indicates encryption, compression or random hex."""
         if not payload:
             return 0.0
-        entropy = 0.0
         length = len(payload)
-        counts = collections.Counter(payload)
-        for count in counts.values():
-            p_x = count / length
-            if p_x > 0:
-                entropy -= p_x * math.log2(p_x)
+        entropy = -sum((c / length) * math.log2(c / length) for c in collections.Counter(payload).values())
         return round(min(8.0, entropy), 3)
 
     def is_off_hours_access(self, timestamp_str: str) -> bool:
-        """Determines if the timestamp falls outside standard banking trading hours (08:00 - 18:00)."""
+        """True on weekends and outside 08:00-19:00 UTC. A timestamp that cannot be parsed is treated as off hours (fail suspicious)."""
         try:
-            # Handle ISO format with Z
-            clean_ts = timestamp_str.replace("Z", "+00:00")
-            dt = datetime.fromisoformat(clean_ts)
-            hour = dt.hour
-            weekday = dt.weekday()
-            # Off hours if weekend or before 8:00 or after 19:00
-            return weekday >= 5 or hour < 8 or hour >= 19
-        except Exception:
-            return False
+            dt = parse_timestamp(timestamp_str).astimezone(timezone.utc)
+        except ValueError:
+            return True
+        return dt.weekday() >= 5 or not (BUSINESS_HOURS_UTC[0] <= dt.hour < BUSINESS_HOURS_UTC[1])
 
+    def _window(self, user_id: str) -> Deque[Tuple[datetime, str]]:
+        window = self.user_windows.get(user_id)
+        if window is None:
+            window = collections.deque(maxlen=settings.FEATURE_MAX_EVENTS_PER_USER)
+            self.user_windows[user_id] = window
+            while len(self.user_windows) > settings.FEATURE_MAX_USERS:
+                evicted, _ = self.user_windows.popitem(last=False)
+                self.cumulative_drip_counters.pop(evicted, None)
+        else:
+            self.user_windows.move_to_end(user_id)
+        return window
+
+    def _privileged_hop(self, event: TelemetryEvent, off_hours: bool) -> bool:
+        """True when the event touches a resource the user holds no grant on, or runs staging tools off hours.
+
+        Entitlements come from the IAM graph, not from a list of known bad users.
+        """
+        resource = iam_graph_builder.extract_resource(event.query)
+        if resource and iam_graph_builder.compute_entitlement_deviation(event.user_id or "anonymous", resource) >= NO_ENTITLEMENT:
+            return True
+        return bool(event.process_name and event.process_name.lower() in SUSPICIOUS_TOOLS and off_hours)
+
+    # ---- extraction ---------------------------------------------------------------------------------------
     def extract_features(self, event: TelemetryEvent) -> FeatureVector:
         """Extracts multi-window temporal and spatial features from an incoming event."""
         user_id = event.user_id or "anonymous"
-        user_history = self.user_windows[user_id]
-        user_history.append(event)
+        event_time = parse_timestamp(event.timestamp)
 
-        # 1. Bytes out / bytes in ratio
-        bytes_in = max(1, event.bytes_in)
-        bytes_out = event.bytes_out
-        ratio = round(bytes_out / bytes_in, 4)
+        with self._lock:
+            history = self._window(user_id)
+            history.append((event_time, event.destination_ip))
+            cutoff = max(t for t, _ in history) - RETENTION
+            while history and history[0][0] < cutoff:
+                history.popleft()  # history is near-sorted; out-of-order stragglers are dropped by maxlen or the next pass
 
-        # 2. Connection frequency in recent window (15m proxy)
-        conn_freq = len(user_history)
+            conn_freq = sum(1 for t, _ in history if event_time - WINDOW_15M < t <= event_time)
+            unique_destinations = len({ip for t, ip in history if event_time - WINDOW_1H < t <= event_time})
 
-        # 3. Shannon payload entropy
+            counters = self.cumulative_drip_counters[user_id]
+            if event.record_count > 0:
+                key = "records_exported" if event.event_type in EXPORT_EVENT_TYPES else "records_read"
+                counters[key] += event.record_count
+                counters["access_count"] += 1
+            read_exp_ratio = counters["records_read"] / max(1.0, counters["records_exported"])
+            if len(self.cumulative_drip_counters) > settings.FEATURE_MAX_USERS:
+                oldest = next(iter(self.cumulative_drip_counters))
+                if oldest != user_id:
+                    del self.cumulative_drip_counters[oldest]
+
+        ratio = round(event.bytes_out / max(1, event.bytes_in), 4)
+
         entropy = event.payload_entropy
         if entropy <= 0.0 and event.raw_payload:
             entropy = self.calculate_shannon_entropy(event.raw_payload)
         elif entropy <= 0.0 and event.query:
             entropy = self.calculate_shannon_entropy(event.query)
 
-        # 4. Outbound destination cardinality
-        unique_destinations = len({e.destination_ip for e in user_history})
-
-        # 5. Off-hours status
         off_hours = self.is_off_hours_access(event.timestamp)
 
-        # 6. Cumulative Drip Metric (180-day rolling read-to-export ratio)
-        counters = self.cumulative_drip_counters[user_id]
-        if event.record_count > 0:
-            if event.event_type in ["database_dump", "batch_export", "file_egress"]:
-                counters["records_exported"] += event.record_count
-            else:
-                counters["records_read"] += event.record_count
-            counters["access_count"] += 1
-
-        # Baseline read-to-export is high (e.g., 20.0). When drip exfiltration occurs,
-        # records_exported steadily grows relative to baseline, causing ratio to drop or deviation to spike.
-        read_exp_ratio = counters["records_read"] / max(1.0, counters["records_exported"])
-        
-        # Historical deviation score: composite normalized signal [0.0 - 1.0]
-        dev_score = 0.0
-        if ratio > 1000.0:  # High outbound volume
-            dev_score += 0.35
-        if entropy > settings.ENTROPY_THRESHOLD:  # High entropy
-            dev_score += 0.30
+        # Composite deviation signal in [0, 1]: a sum of independent warning signs, capped.
+        deviation = 0.0
+        if ratio > 1000.0:
+            deviation += 0.35
+        if entropy > settings.ENTROPY_THRESHOLD:
+            deviation += 0.30
         if off_hours:
-            dev_score += 0.20
+            deviation += 0.20
         if unique_destinations > 5:
-            dev_score += 0.15
-        if read_exp_ratio < 2.0:  # Abnormally high cumulative export relative to reads
-            dev_score += 0.30
-
-        historical_deviation = round(min(1.0, dev_score), 3)
-
-        # Privileged role hop flag
-        priv_hop = False
-        if event.user_id == "usr_dev_4091" and "cardholder" in str(event.query).lower():
-            priv_hop = True
-        elif event.process_name in ["powershell.exe", "7z.exe", "pg_dump.exe"] and off_hours:
-            priv_hop = True
+            deviation += 0.15
+        if read_exp_ratio < 2.0:  # cumulative exports are catching up with reads
+            deviation += 0.30
 
         feature_vec = FeatureVector(
             event_id=event.event_id,
@@ -125,18 +141,23 @@ class StreamingFeatureStore:
             bytes_out_in_ratio=ratio,
             connection_frequency_15m=conn_freq,
             payload_entropy=round(entropy, 2),
-            historical_deviation_score=historical_deviation,
+            historical_deviation_score=round(min(1.0, deviation), 3),
             destination_cardinality_1h=unique_destinations,
             rolling_read_to_export_ratio_180d=round(read_exp_ratio, 2),
             is_off_hours=off_hours,
-            privileged_role_hop=priv_hop,
+            privileged_role_hop=self._privileged_hop(event, off_hours),
         )
 
-        self.feature_cache[event.event_id] = feature_vec
+        with self._lock:
+            self.feature_cache[event.event_id] = feature_vec
+            self.feature_cache.move_to_end(event.event_id)
+            while len(self.feature_cache) > settings.FEATURE_CACHE_SIZE:
+                self.feature_cache.popitem(last=False)
         return feature_vec
 
     def get_feature_vector(self, event_id: str) -> Optional[FeatureVector]:
-        return self.feature_cache.get(event_id)
+        with self._lock:
+            return self.feature_cache.get(event_id)
 
 
 # Global feature store instance

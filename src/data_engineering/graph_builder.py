@@ -6,6 +6,7 @@ for Layer 2 GNN anomaly scoring and Layer 3 Graph-RAG contextual enrichment.
 """
 
 import json
+import re
 from typing import Any, Dict, List, Optional, Set
 import networkx as nx
 from src.core.config import settings
@@ -66,6 +67,21 @@ class EnterpriseIAMGraphBuilder:
                 self.graph.add_node(db, node_type="DATABASE")
                 self.graph.add_edge(role_id, db, relationship="CAN_READ")
                 self.graph.add_edge(u_id, db, relationship="AUTHORIZED_ACCESS")
+
+    def known_resources(self) -> Set[str]:
+        """Databases and tables the platform knows about: every DATABASE node plus the configured sensitive tables."""
+        databases = {n for n, d in self.graph.nodes(data=True) if d.get("node_type") == "DATABASE"}
+        return databases | set(settings.sensitive_tables)
+
+    def extract_resource(self, query: Optional[str]) -> Optional[str]:
+        """The first known resource named (as a whole identifier) in a query, or None."""
+        if not query:
+            return None
+        lowered = query.lower()
+        for resource in sorted(self.known_resources()):
+            if re.search(rf"(?<![A-Za-z0-9_]){re.escape(resource.lower())}(?![A-Za-z0-9_])", lowered):
+                return resource
+        return None
 
     def get_user_metadata(self, user_id: str) -> Optional[Dict[str, Any]]:
         return self.users_data.get(user_id)

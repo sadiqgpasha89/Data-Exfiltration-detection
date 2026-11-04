@@ -1,7 +1,33 @@
 """Pytest configuration and shared fixtures for Data Exfiltration Detection platform."""
 
+import os
+
+# Must be set before the application modules are imported: the labelled benchmark is computed on demand in tests.
+os.environ.setdefault("BENCHMARK_ON_STARTUP", "false")
+os.environ.setdefault("APP_ENV", "development")
+
 import pytest
+from src.core.config import settings
 from src.core.models import FeatureVector, TelemetryEvent
+
+API_KEYS = {
+    "viewer": "viewer-key-0123456789abcdef",
+    "ingest": "ingest-key-0123456789abcdef",
+    "analyst": "analyst-key-0123456789abcdef",
+    "admin": "admin-key-0123456789abcdef",
+}
+
+
+@pytest.fixture
+def auth_keys(monkeypatch):
+    """Turns authentication on with one key per role and returns {role: key}."""
+    monkeypatch.setattr(settings, "AUTH_DISABLED", False)
+    monkeypatch.setattr(settings, "API_KEYS", ",".join(f"{role}_user:{role}:{key}" for role, key in API_KEYS.items()))
+    return API_KEYS
+
+
+def headers_for(role: str) -> dict:
+    return {"X-API-Key": API_KEYS[role]}
 
 
 @pytest.fixture

@@ -1,52 +1,42 @@
-"""Retrieval-Augmented Generation (RAG) Metrics Calculator.
+"""Context-retrieval metrics.
 
-Computes standard Ragas / TruLens RAG evaluation metrics:
-1. Context Retrieval Recall: Proportion of relevant enterprise context documents retrieved
-2. Context Precision: Proportion of retrieved documents that are relevant to hypothesis
-3. Faithfulness: Degree to which agent findings strictly derive from retrieved context
-4. Answer Relevancy: Relevancy of generated incident synthesis to the exfiltration hypothesis
+Graph-RAG here is retrieval over the IAM graph, HR records and change tickets, followed by deterministic rules. There is
+no generated text to grade for faithfulness. What is measurable is how retrieval decisions turn out, so that is what is
+counted: how many context lookups ran, how many found an approved ticket, and how many tickets were rejected and why.
 """
 
-from typing import Any, Dict, List
+import collections
+import threading
+from typing import Any, Dict
 
 
 class RAGMetricsCalculator:
-    """Evaluates Graph-RAG retrieval quality and generation grounding."""
+    """Counts context retrievals and ticket decisions."""
 
     def __init__(self):
-        self.sample_evaluations: List[Dict[str, float]] = [
-            {"recall": 0.94, "precision": 0.92, "faithfulness": 0.98, "relevancy": 0.95},
-            {"recall": 0.96, "precision": 0.89, "faithfulness": 0.97, "relevancy": 0.94},
-            {"recall": 0.91, "precision": 0.95, "faithfulness": 0.99, "relevancy": 0.96},
-        ]
+        self._lock = threading.Lock()
+        self.retrievals = 0
+        self.with_valid_ticket = 0
+        self.rejected_ticket_reasons: "collections.Counter[str]" = collections.Counter()
 
-    def record_rag_interaction(self, recall: float, precision: float, faithfulness: float, relevancy: float):
-        self.sample_evaluations.append({
-            "recall": recall,
-            "precision": precision,
-            "faithfulness": faithfulness,
-            "relevancy": relevancy,
-        })
+    def record_retrieval(self, has_valid_ticket: bool, rejected_reasons=()):
+        with self._lock:
+            self.retrievals += 1
+            self.with_valid_ticket += int(has_valid_ticket)
+            self.rejected_ticket_reasons.update(rejected_reasons)
 
     def calculate_metrics(self) -> Dict[str, Any]:
-        recalls = [e["recall"] for e in self.sample_evaluations]
-        precisions = [e["precision"] for e in self.sample_evaluations]
-        faithfulness_scores = [e["faithfulness"] for e in self.sample_evaluations]
-        relevancies = [e["relevancy"] for e in self.sample_evaluations]
-
-        avg_recall = sum(recalls) / len(recalls)
-        avg_precision = sum(precisions) / len(precisions)
-        avg_faithfulness = sum(faithfulness_scores) / len(faithfulness_scores)
-        avg_relevancy = sum(relevancies) / len(relevancies)
-
-        return {
-            "context_retrieval_recall": round(avg_recall, 4),
-            "context_precision": round(avg_precision, 4),
-            "faithfulness": round(avg_faithfulness, 4),
-            "answer_relevancy": round(avg_relevancy, 4),
-            "rag_composite_score": round((avg_recall + avg_precision + avg_faithfulness + avg_relevancy) / 4.0, 4),
-            "knowledge_graph_backend": "Enterprise IAM Graph + Jira ITSM + HR DB",
-        }
+        with self._lock:
+            return {
+                "measured": self.retrievals > 0,
+                "context_retrievals": self.retrievals,
+                "retrievals_with_valid_ticket": self.with_valid_ticket,
+                "ticket_match_rate": round(self.with_valid_ticket / self.retrievals, 4) if self.retrievals else None,
+                "rejected_ticket_reasons": dict(self.rejected_ticket_reasons.most_common(10)),
+                "knowledge_graph_backend": "Enterprise IAM Graph + Jira ITSM + HR DB",
+                "faithfulness": None,
+                "not_applicable": "No generated text is produced, so faithfulness, answer relevancy and retrieval recall against a gold set do not apply.",
+            }
 
 
 rag_metrics = RAGMetricsCalculator()

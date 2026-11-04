@@ -1,65 +1,42 @@
-"""Machine Learning Performance Metrics Calculator.
+"""Machine Learning Performance Metrics.
 
-Computes:
-1. Precision-Recall Area Under Curve (PR-AUC)
-2. False Positive Rate (FPR) at Strict True Positive Threshold (TPR >= 0.95) - Target: < 0.001
-3. Brier Score Calibration: (1/N) * sum((f_t - o_t)^2)
-4. F1-Score, Precision, Recall, and Confusion Matrix
+Read from the labelled benchmark (`src/evaluation/benchmark.py`), which runs the real rules, features and models over
+generated benign and malicious telemetry. Nothing here is typed in. Until the first benchmark run finishes (a few
+seconds after start-up) the report says it is computing.
 """
 
-import numpy as np
-from sklearn.metrics import brier_score_loss, f1_score, precision_recall_curve, precision_score, recall_score, auc
-from typing import Any, Dict, List
+from typing import Any, Dict
+
+from src.evaluation.benchmark import benchmark_cache
 
 
 class MLMetricsCalculator:
-    """Evaluates mathematical accuracy and calibration of L2 anomaly models."""
-
-    def __init__(self):
-        np.random.seed(42)
-        # Synthetic evaluation distribution with extreme banking class imbalance (1% positive exfiltration rate)
-        n_neg = 990
-        n_pos = 10
-        self.y_true = np.array([0] * n_neg + [1] * n_pos)
-
-        # Well-calibrated probabilistic scores
-        scores_neg = np.random.beta(a=1.0, b=15.0, size=n_neg)
-        scores_pos = np.random.beta(a=12.0, b=2.0, size=n_pos)
-        self.y_scores = np.concatenate([scores_neg, scores_pos])
+    """Serves benchmark-derived model quality metrics."""
 
     def calculate_metrics(self) -> Dict[str, Any]:
-        # 1. PR-AUC
-        precision_curve, recall_curve, _ = precision_recall_curve(self.y_true, self.y_scores)
-        pr_auc = auc(recall_curve, precision_curve)
-
-        # 2. Binary predictions at optimal threshold (0.65)
-        y_pred = (self.y_scores >= 0.65).astype(int)
-        prec = precision_score(self.y_true, y_pred, zero_division=0)
-        rec = recall_score(self.y_true, y_pred, zero_division=0)
-        f1 = f1_score(self.y_true, y_pred, zero_division=0)
-
-        # 3. FPR at TPR >= 0.95
-        # Find threshold where recall >= 0.95
-        fpr_at_95_tpr = 0.0007
-        tn = np.sum((self.y_true == 0) & (y_pred == 0))
-        fp = np.sum((self.y_true == 0) & (y_pred == 1))
-        calculated_fpr = fp / max(1, (fp + tn))
-        fpr = min(fpr_at_95_tpr, calculated_fpr)
-
-        # 4. Brier Calibration Score
-        brier = brier_score_loss(self.y_true, self.y_scores)
-
+        report = benchmark_cache.get()
+        if report.get("status") != "ready":
+            return {"measured": False, "status": report.get("status"), "error": report.get("error")}
+        ens = report["ensemble"]
         return {
-            "pr_auc": round(float(pr_auc), 4),
-            "f1_score": round(float(f1), 4),
-            "precision": round(float(prec), 4),
-            "recall": round(float(rec), 4),
-            "false_positive_rate_at_95_tpr": round(float(fpr), 5),
-            "fpr_target_met": bool(fpr < 0.001),
-            "brier_calibration_score": round(float(brier), 5),
-            "total_validation_records": int(len(self.y_true)),
-            "positive_malicious_samples": int(np.sum(self.y_true)),
-            "negative_benign_samples": int(len(self.y_true) - np.sum(self.y_true)),
+            "measured": True,
+            "status": "ready",
+            "evaluated_on": f"synthetic labelled benchmark ({report['dataset']['events']} events, {report['dataset']['malicious']} malicious)",
+            "evaluated_at": report["evaluated_at"],
+            "caveat": report["dataset"]["caveat"],
+            "pr_auc": ens["pr_auc"],
+            "roc_auc": ens["roc_auc"],
+            "f1_score": ens["f1_at_tau"],
+            "precision": ens["precision_at_tau"],
+            "recall": ens["recall_at_tau"],
+            "false_positive_rate_at_95_tpr": ens["fpr_at_95_tpr"],
+            "fpr_target_met": None if ens["fpr_at_95_tpr"] is None else bool(ens["fpr_at_95_tpr"] < 0.001),
+            "brier_calibration_score": ens["brier"],
+            "by_model": report["by_model"],
+            "layer3_dispatch": report["dispatch_to_layer3"],
+            "total_validation_records": report["dataset"]["events"],
+            "positive_malicious_samples": report["dataset"]["malicious"],
+            "negative_benign_samples": report["dataset"]["benign"],
         }
 
 

@@ -1,47 +1,46 @@
 """Agentic System Metrics Calculator.
 
-Computes:
-1. Task Completion Rate (% autonomous investigations resolved to conclusive decision)
-2. Tool-Use Trajectory Accuracy (alignment against golden sequence)
-3. Hallucination / Grounding Error Rate (target < 0.1%)
-4. Agent Consensus Convergence Rate (average deliberation cycles required)
+The Layer 3 agents are deterministic tool-using components: there is no language model, so there is nothing to
+hallucinate and no free-form trajectory to score. Those two figures are therefore reported as not applicable instead of
+as invented numbers. What can be measured is measured: investigations run and completed, tool calls per investigation,
+and how many verdicts ended with a human in the loop.
 """
 
+import threading
 from typing import Any, Dict, List
 
 
 class AgenticMetricsCalculator:
-    """Calculates agent reasoning fidelity, tool reliability, and consensus stability."""
+    """Counts what the swarm actually did."""
 
     def __init__(self):
-        self.total_tasks_attempted = 150
-        self.total_tasks_completed = 148
-        self.trajectory_accuracy_scores: List[float] = [1.0, 1.0, 0.95, 1.0, 0.90, 1.0, 1.0, 0.95]
-        self.hallucination_rates: List[float] = [0.0005, 0.0002, 0.0008, 0.0001, 0.0004]
-        self.consensus_cycles_records: List[int] = [1, 1, 2, 1, 1, 2, 1, 1]
+        self._lock = threading.Lock()
+        self.total_tasks_attempted = 0
+        self.total_tasks_completed = 0
+        self.tool_calls: List[int] = []
+        self.consensus_cycles_records: List[int] = []
 
-    def record_investigation(self, completed: bool, trajectory_acc: float, hallucination_rate: float, cycles: int):
-        self.total_tasks_attempted += 1
-        if completed:
-            self.total_tasks_completed += 1
-        self.trajectory_accuracy_scores.append(trajectory_acc)
-        self.hallucination_rates.append(hallucination_rate)
-        self.consensus_cycles_records.append(cycles)
+    def record_investigation(self, completed: bool, tool_calls: int = 0, cycles: int = 1, **_legacy):
+        with self._lock:
+            self.total_tasks_attempted += 1
+            if completed:
+                self.total_tasks_completed += 1
+            self.tool_calls.append(tool_calls)
+            self.consensus_cycles_records.append(cycles)
 
     def calculate_metrics(self) -> Dict[str, Any]:
-        comp_rate = (self.total_tasks_completed / max(1, self.total_tasks_attempted)) * 100.0
-        avg_traj = sum(self.trajectory_accuracy_scores) / max(1, len(self.trajectory_accuracy_scores))
-        avg_hallucination = sum(self.hallucination_rates) / max(1, len(self.hallucination_rates))
-        avg_cycles = sum(self.consensus_cycles_records) / max(1, len(self.consensus_cycles_records))
-
-        return {
-            "task_completion_rate_pct": round(comp_rate, 2),
-            "tool_trajectory_accuracy": round(avg_traj, 4),
-            "hallucination_error_rate": round(avg_hallucination, 5),
-            "hallucination_target_met": avg_hallucination <= 0.001,
-            "average_consensus_convergence_cycles": round(avg_cycles, 2),
-            "total_autonomous_swarms_executed": self.total_tasks_attempted,
-        }
+        with self._lock:
+            n = self.total_tasks_attempted
+            return {
+                "measured": n > 0,
+                "task_completion_rate_pct": round(self.total_tasks_completed / n * 100.0, 2) if n else None,
+                "average_tool_calls_per_investigation": round(sum(self.tool_calls) / n, 2) if n else None,
+                "average_consensus_convergence_cycles": round(sum(self.consensus_cycles_records) / n, 2) if n else None,
+                "total_autonomous_swarms_executed": n,
+                "tool_trajectory_accuracy": None,
+                "hallucination_error_rate": None,
+                "not_applicable": "Agents are deterministic (no language model), so trajectory accuracy and hallucination rate do not apply.",
+            }
 
 
 agentic_metrics = AgenticMetricsCalculator()

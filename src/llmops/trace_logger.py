@@ -3,7 +3,7 @@
 Tracks agent reasoning steps, tool invocation spans, and inter-agent messages.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 
@@ -30,7 +30,7 @@ class AgentTraceSpan:
             "agent_name": self.agent_name,
             "duration_ms": self.duration_ms,
             "attributes": self.attributes,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
 
 
@@ -47,7 +47,7 @@ class AgentTraceLogger:
             "agent_name": agent_name,
             "duration_ms": duration_ms,
             "attributes": attributes or {},
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
         self.spans.append(entry)
 

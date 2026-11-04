@@ -32,18 +32,68 @@ def test_wasserstein_distance():
     assert w_far > 10.0
 
 
-def test_model_registry_metadata():
+def test_drift_reports_insufficient_data_instead_of_inventing_a_window():
+    from src.mlops.drift_detector import DriftDetector
+    fresh = DriftDetector()
+    report = fresh.evaluate_feature_drift()
+    assert report["status"] == "INSUFFICIENT_DATA"
+    assert report["psi_score"] is None and report["alert_triggered"] is False
+
+
+def test_drift_uses_the_live_feature_window():
+    from src.core.baseline import benign_baseline_matrix
+    from src.mlops.drift_detector import DriftDetector
+    detector = DriftDetector()
+    for row in benign_baseline_matrix(400, seed=99):  # same distribution, new draw
+        detector.record_feature_vector(row)
+    healthy = detector.evaluate_feature_drift()
+    assert healthy["status"] == "OK" and healthy["alert_triggered"] is False
+
+    drifted = DriftDetector()
+    for row in benign_baseline_matrix(400, seed=5):
+        row = row.copy()
+        row[0] += 2.0   # outbound ratio shifts far up
+        row[2] += 2.5   # entropy rises
+        drifted.record_feature_vector(row)
+    report = drifted.evaluate_feature_drift()
+    assert report["alert_triggered"] is True and report["data_drift_detected"] is True
+    assert report["worst_feature"] in ("log_bytes_out_in_ratio", "payload_entropy")
+
+
+def test_model_registry_describes_what_runs_and_measures_it():
+    from src.evaluation.benchmark import benchmark_cache
+    benchmark_cache.wait()
     models = model_registry.get_production_models()
-    assert len(models) >= 3
+    assert len(models) == 3
+    names = " ".join(m.algorithm for m in models)
+    assert "Isolation" in names and "PCA" in names and "not a neural network" in names  # no VAE or GNN claims
     for m in models:
         assert m.status == "PRODUCTION"
-        assert m.pr_auc > 0.90
+        assert m.pr_auc is not None and 0.0 < m.pr_auc <= 1.0
+        assert "benchmark" in m.metrics_source
 
 
-def test_retraining_trigger():
-    initial_jobs = len(retraining_controller.get_history())
-    job = retraining_controller.check_and_trigger(force=True)
+def test_retraining_is_recorded_and_honest_about_dispatch():
+    from src.mlops.retraining_trigger import AutomatedRetrainingController
 
-    assert job["triggered"] is True
-    assert job["status"] == "DISPATCHED_TO_VERTEX_PIPELINES"
-    assert len(retraining_controller.get_history()) == initial_jobs + 1
+    controller = AutomatedRetrainingController()
+    job = controller.check_and_trigger(force=True, requested_by="admin_user")
+    assert job["triggered"] is True and job["requested_by"] == "admin_user"
+    assert job["status"] == "REQUESTED_NO_BACKEND_CONFIGURED"  # nothing was dispatched, and it says so
+    assert len(controller.get_history()) == 1
+
+    class Backend:
+        def submit(self, job):
+            return {"run_id": "r-1"}
+
+    controller.register_backend(Backend())
+    job = controller.check_and_trigger(force=True)
+    assert job["status"] == "DISPATCHED" and job["backend_result"] == {"run_id": "r-1"}
+
+    class Broken:
+        def submit(self, job):
+            raise RuntimeError("down")
+
+    controller.register_backend(Broken())
+    assert controller.check_and_trigger(force=True)["status"] == "DISPATCH_FAILED"
+    assert controller.check_and_trigger()["status"] == "IDLE"  # no drift, not forced
