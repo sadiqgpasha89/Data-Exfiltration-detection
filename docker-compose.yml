@@ -1,0 +1,23 @@
+# Production-shaped run: docker compose --env-file .env up --build
+# The refusal-to-start checks apply (APP_ENV=production): set TOKENIZATION_KEY_HEX and API_KEYS first (see `make keys`).
+services:
+  sentinel:
+    build: .
+    env_file: .env
+    environment:
+      APP_ENV: production
+      LEDGER_PATH: /var/lib/sentinel/ledger.jsonl
+    ports:
+      - "8080:8080"
+    volumes:
+      - ledger:/var/lib/sentinel
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+volumes:
+  ledger:

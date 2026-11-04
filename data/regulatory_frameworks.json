@@ -1,0 +1,51 @@
+{
+  "frameworks": {
+    "PCI_DSS_v4": {
+      "name": "Payment Card Industry Data Security Standard v4.0",
+      "scope": ["cardholder_data", "credit_card_numbers", "cvv", "track_data"],
+      "statutory_reporting_window_hours": 24,
+      "per_record_fine_usd": 150.0,
+      "max_regulatory_penalty_usd": 5000000.0,
+      "mandates": [
+        "Requirement 3: Protect Stored Account Data",
+        "Requirement 10: Log and Monitor All Access to System Components and Cardholder Data",
+        "Requirement 11: Test Security of Systems and Networks Regularly"
+      ]
+    },
+    "GDPR": {
+      "name": "General Data Protection Regulation (EU 2016/679)",
+      "scope": ["pii", "customer_records", "biometric_data", "bank_account_iban"],
+      "statutory_reporting_window_hours": 72,
+      "per_record_fine_usd": 250.0,
+      "max_regulatory_penalty_usd": 20000000.0,
+      "mandates": [
+        "Article 32: Security of processing",
+        "Article 33: Notification of a personal data breach to the supervisory authority",
+        "Article 34: Communication of a personal data breach to the data subject"
+      ]
+    },
+    "GLBA": {
+      "name": "Gramm-Leach-Bliley Act (Financial Modernization Act)",
+      "scope": ["npi", "financial_records", "account_balances", "credit_scores"],
+      "statutory_reporting_window_hours": 48,
+      "per_record_fine_usd": 100.0,
+      "max_regulatory_penalty_usd": 1000000.0,
+      "mandates": [
+        "Safeguards Rule: Maintain administrative, technical, and physical safeguards for NPI",
+        "Pretexting Provisions: Protection against obtaining customer info under false pretenses"
+      ]
+    },
+    "BCBS_239": {
+      "name": "Basel Committee on Banking Supervision (Risk Data Aggregation)",
+      "scope": ["core_ledger", "quantitative_models", "swift_messages", "treasury_transfers"],
+      "statutory_reporting_window_hours": 12,
+      "per_record_fine_usd": 500.0,
+      "max_regulatory_penalty_usd": 50000000.0,
+      "mandates": [
+        "Principle 1: Governance of Risk Data",
+        "Principle 3: Accuracy and Integrity of Aggregated Risk Data",
+        "Principle 7: Comprehensiveness of Aggregation Capabilities"
+      ]
+    }
+  }
+}
