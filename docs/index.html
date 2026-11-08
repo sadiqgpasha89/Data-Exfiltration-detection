@@ -1,0 +1,411 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sentinel: Data Exfiltration Detection &amp; Prevention</title>
+<meta name="description" content="A tri-layered system that detects and stops data exfiltration at a financial institution: wire-speed rules, anomaly detection, and an evidence-based investigation layer.">
+<meta property="og:title" content="Sentinel: Data Exfiltration Detection &amp; Prevention">
+<meta property="og:description" content="Rules at the edge, anomaly models in the middle, and an investigation layer that hands a human a signed case file.">
+<style>
+  :root {
+    --bg: #f7f8fa;
+    --surface: #ffffff;
+    --ink: #151a23;
+    --muted: #5a6475;
+    --line: #dde1e8;
+    --brand: #0b5fff;
+    --brand-soft: #e6eeff;
+    --l1: #0b7a5a;
+    --l1-soft: #e1f4ee;
+    --l2: #8a5a00;
+    --l2-soft: #fdf1d9;
+    --l3: #6b34c9;
+    --l3-soft: #efe7fb;
+    --bad: #b42318;
+    --bad-soft: #fde8e6;
+    --code-bg: #0f1522;
+    --code-ink: #dbe4f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d111a;
+      --surface: #151b27;
+      --ink: #e8ecf4;
+      --muted: #9aa5b8;
+      --line: #263045;
+      --brand: #6f9bff;
+      --brand-soft: #1a2542;
+      --l1: #4cd1a6;
+      --l1-soft: #12302a;
+      --l2: #f0b94d;
+      --l2-soft: #33280f;
+      --l3: #b693f2;
+      --l3-soft: #261a40;
+      --bad: #ff8b7e;
+      --bad-soft: #3a1b18;
+      --code-bg: #0a0e17;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  a { color: var(--brand); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px; }
+  header.top {
+    position: sticky; top: 0; z-index: 10;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  header.top .wrap { display: flex; align-items: center; gap: 20px; height: 56px; }
+  .logo { font-weight: 700; letter-spacing: .02em; color: var(--ink); text-decoration: none; }
+  nav { display: flex; gap: 16px; margin-left: auto; overflow-x: auto; }
+  nav a { color: var(--muted); text-decoration: none; font-size: 14px; white-space: nowrap; }
+  nav a:hover { color: var(--ink); }
+  .btn {
+    display: inline-block; padding: 10px 18px; border-radius: 8px;
+    background: var(--brand); color: #fff; text-decoration: none; font-weight: 600; font-size: 15px;
+    border: 1px solid var(--brand);
+  }
+  .btn.ghost { background: transparent; color: var(--brand); }
+  .hero { padding: 72px 0 48px; }
+  .eyebrow { color: var(--brand); font-weight: 600; font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.12; margin: 10px 0 16px; letter-spacing: -.02em; }
+  .lede { font-size: 1.15rem; color: var(--muted); max-width: 720px; }
+  .cta { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 28px; }
+  .notice {
+    margin-top: 28px; padding: 12px 16px; border-left: 4px solid var(--l2);
+    background: var(--l2-soft); border-radius: 0 8px 8px 0; font-size: 14.5px;
+  }
+  section { padding: 48px 0; border-top: 1px solid var(--line); }
+  h2 { font-size: 1.7rem; margin: 0 0 8px; letter-spacing: -.01em; }
+  h3 { margin: 0 0 6px; font-size: 1.1rem; }
+  .sub { color: var(--muted); max-width: 720px; margin: 0 0 28px; }
+  .grid { display: grid; gap: 16px; }
+  .g2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+  .g3 { grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  .card p, .card ul { margin: 6px 0 0; color: var(--muted); font-size: 15px; }
+  .card ul { padding-left: 18px; }
+  .tag {
+    display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px;
+    border-radius: 999px; margin-bottom: 8px; letter-spacing: .03em;
+  }
+  .t1 { background: var(--l1-soft); color: var(--l1); }
+  .t2 { background: var(--l2-soft); color: var(--l2); }
+  .t3 { background: var(--l3-soft); color: var(--l3); }
+  .tb { background: var(--brand-soft); color: var(--brand); }
+
+  /* scenario */
+  .scenario { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 24px; }
+  .scenario blockquote { margin: 0 0 12px; font-size: 1.1rem; }
+  .steps { counter-reset: s; list-style: none; padding: 0; margin: 16px 0 0; display: grid; gap: 10px; }
+  .steps li { counter-increment: s; display: flex; gap: 12px; color: var(--muted); }
+  .steps li::before {
+    content: counter(s); flex: none; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--brand-soft); color: var(--brand); font-weight: 700; font-size: 13px;
+    display: grid; place-items: center; margin-top: 2px;
+  }
+  .steps b { color: var(--ink); }
+
+  /* pipeline */
+  .pipe { display: grid; gap: 0; }
+  .stage { border-radius: 12px; padding: 18px 20px; border: 1px solid var(--line); }
+  .stage.src { background: var(--surface); }
+  .stage.edge { background: var(--l1-soft); border-color: color-mix(in srgb, var(--l1) 35%, transparent); }
+  .stage.ana { background: var(--l2-soft); border-color: color-mix(in srgb, var(--l2) 35%, transparent); }
+  .stage.inv { background: var(--l3-soft); border-color: color-mix(in srgb, var(--l3) 35%, transparent); }
+  .stage.out { background: var(--surface); }
+  .stage h3 { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+  .stage h3 small { font-weight: 500; color: var(--muted); font-size: 13px; }
+  .stage ul { margin: 8px 0 0; padding-left: 18px; font-size: 14.5px; color: var(--ink); }
+  .arrow { text-align: center; color: var(--muted); font-size: 13px; padding: 6px 0; }
+  .arrow::before { content: "↓ "; }
+
+  /* verdicts */
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; font-size: 14.5px; }
+  th, td { text-align: left; padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--bg); font-size: 12.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+  tr:last-child td { border-bottom: 0; }
+  code { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--brand-soft); padding: 1px 6px; border-radius: 4px; color: var(--ink); }
+  .tablewrap { overflow-x: auto; }
+
+  /* metrics */
+  .metrics { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+  .metric { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .metric .v { font-size: 1.7rem; font-weight: 700; letter-spacing: -.02em; }
+  .metric .k { color: var(--muted); font-size: 13.5px; }
+  .warn { background: var(--bad-soft); border-left: 4px solid var(--bad); padding: 12px 16px; border-radius: 0 8px 8px 0; margin-top: 18px; font-size: 14.5px; }
+
+  .real { color: var(--l1); font-weight: 600; }
+  .sim { color: var(--l2); font-weight: 600; }
+
+  pre {
+    background: var(--code-bg); color: var(--code-ink); padding: 16px 18px; border-radius: 10px;
+    overflow-x: auto; font: 13.5px/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; margin: 8px 0 16px;
+  }
+  footer { border-top: 1px solid var(--line); padding: 32px 0 48px; color: var(--muted); font-size: 14px; }
+  footer .wrap { display: flex; gap: 16px; flex-wrap: wrap; justify-content: space-between; }
+  @media (max-width: 560px) {
+    .hero { padding-top: 40px; }
+    nav { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="#top">Sentinel</a>
+    <nav aria-label="Sections">
+      <a href="#usecase">Use case</a>
+      <a href="#how">How it works</a>
+      <a href="#verdicts">Verdicts</a>
+      <a href="#security">Security</a>
+      <a href="#quality">Quality</a>
+      <a href="#honesty">What's real</a>
+      <a href="#run">Run it</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <div class="wrap hero">
+    <div class="eyebrow">Banking · Insider threat · Reference implementation</div>
+    <h1>Stop data leaving the bank, and know why you stopped it.</h1>
+    <p class="lede">
+      Sentinel is a tri-layered system for detecting and stopping data exfiltration at a financial institution:
+      a wire-speed rules layer at the edge, an anomaly-detection layer, and an investigation layer that reasons over
+      identity, HR and change-management context and hands a human analyst a signed case file.
+    </p>
+    <div class="cta">
+      <a class="btn" href="https://github.com/sadiqgpasha89/Data-Exfiltration-detection">View the code on GitHub</a>
+      <a class="btn ghost" href="#usecase">Understand the use case</a>
+    </div>
+    <div class="notice">
+      <strong>Honest scope.</strong> This is a working <em>reference implementation</em> of the design, not a deployed product.
+      Platform integrations (Kafka, Redis, BigQuery, Vertex AI, Neutron, identity provider, Vault) are in-process stand-ins.
+      The detection logic, decision policy, security controls and tests are real. See <a href="#honesty">what is and isn't real</a>.
+    </div>
+  </div>
+
+  <section id="usecase">
+    <div class="wrap">
+      <h2>The use case</h2>
+      <p class="sub">Most of an insider-threat system's value comes down to one moment, and the decision that follows it.</p>
+
+      <div class="scenario">
+        <blockquote>
+          A database administrator pulls <strong>480,000 customer records</strong> at 11:45 on a Sunday night.
+          Is it a scheduled migration, or the start of a breach?
+        </blockquote>
+        <p style="margin:0;color:var(--muted)">
+          Within seconds the platform has to decide, and then decide whether cutting that person off the network is justified.
+          Cut off a legitimate batch job and you cause an outage. Wave through a real breach and you have a regulatory incident.
+        </p>
+        <ol class="steps">
+          <li><span><b>Edge rules fire in under a millisecond.</b> Card numbers, known C2 addresses, honeytoken records and random-looking payloads are caught deterministically.</span></li>
+          <li><span><b>Anomaly models score the behaviour.</b> Is this volume, time of day and read-to-export ratio normal for this user and role?</span></li>
+          <li><span><b>Investigation agents gather evidence.</b> Is there a valid change ticket for this user, at this time, for this data and destination? Is the person resigning?</span></li>
+          <li><span><b>A decision policy returns a verdict</b> using evidence only, never a label the sender chose, and records it in a tamper-evident ledger.</span></li>
+          <li><span><b>A human closes the case.</b> Containment is a dry run by default and guarded when enabled.</span></li>
+        </ol>
+      </div>
+
+      <div class="grid g3" style="margin-top:20px">
+        <div class="card"><span class="tag tb">Who it's for</span><p>SOC analysts, security architects and anyone studying how to build insider-threat detection that can be audited.</p></div>
+        <div class="card"><span class="tag tb">What it detects</span><p>Bulk exports, drip exfiltration, covert channels (DNS, steganography), use of known C2 infrastructure, and access beyond a user's entitlements.</p></div>
+        <div class="card"><span class="tag tb">What makes it different</span><p>Verdicts rest on evidence, quality is measured rather than asserted, and every limitation is documented.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <h2>How it works</h2>
+      <p class="sub">Telemetry flows through three layers. Each layer is cheaper and faster than the one after it, so only what matters reaches an analyst.</p>
+
+      <div class="pipe">
+        <div class="stage src">
+          <h3>Telemetry <small>endpoints · databases · NetFlow</small></h3>
+          <div style="font-size:14.5px;color:var(--muted)"><code>POST /api/v1/evaluate/process</code> with an API key, a validated body and load shedding.</div>
+        </div>
+        <div class="arrow">validate and tokenize</div>
+        <div class="stage edge">
+          <h3><span class="tag t1">LAYER 1</span> Deterministic rules at the edge <small>target: under 1 ms</small></h3>
+          <ul>
+            <li>Exact Data Match: file hashes of proprietary assets via a Bloom filter, then an exact set check</li>
+            <li>Luhn-validated cards, IBAN mod-97, plausible SSNs</li>
+            <li>Threat-intel feeds: IPv4/IPv6 addresses, CIDR blocks, C2 domains matched on whole DNS labels</li>
+            <li>Zero-tolerance egress ports from database subnets</li>
+            <li>Honeytokens (canary records) detected with or without separators</li>
+            <li>Entropy and a chi-square test of the byte histogram</li>
+          </ul>
+        </div>
+        <div class="arrow">features from true 15 min / 1 h / 24 h windows</div>
+        <div class="stage ana">
+          <h3><span class="tag t2">LAYER 2</span> Anomaly detection <small>score S, escalate at S ≥ 0.65</small></h3>
+          <ul>
+            <li>Isolation Forest over eight behavioural features, calibrated so 0.5 is the edge of benign data</li>
+            <li>PCA bottleneck autoencoder (linear, NumPy), calibrated on its own training distribution</li>
+            <li>IAM entitlement scorer: shortest-path distance from user to resource, plus resignation and privileged-hop signals</li>
+            <li>Ensemble weights 0.35 / 0.35 / 0.30, and escalates if any single model is above 0.85</li>
+          </ul>
+        </div>
+        <div class="arrow">S ≥ 0.65, or a Layer 1 flag</div>
+        <div class="stage inv">
+          <h3><span class="tag t3">LAYER 3</span> Investigation and decision</h3>
+          <ul>
+            <li>Three deterministic agents: triage forensics, correlation (IAM, HR, change tickets) and compliance exposure</li>
+            <li>Decision policy applied to the evidence. There is no language model in this layer.</li>
+            <li>Guarded containment: dry run by default, protected targets never touched, hourly cap</li>
+          </ul>
+        </div>
+        <div class="arrow">hash-chained audit ledger</div>
+        <div class="stage out">
+          <h3>SOC cockpit <small>an analyst reviews and closes the case</small></h3>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="verdicts">
+    <div class="wrap">
+      <h2>Decisions based on evidence</h2>
+      <p class="sub">
+        The <code>category</code> field of a telemetry event is a label chosen by whoever sent it. It is displayed and never used to make a decision.
+      </p>
+      <div class="tablewrap">
+        <table>
+          <thead><tr><th>Verdict</th><th>When</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><code>LEGITIMATE_BULK_OPERATION</code></td>
+              <td>A change ticket is valid <b>for this user, at the time of the event, for this data and this destination</b>, with no hard indicator, no departing employee, no sensitive-data or concealment finding and no extreme score.</td>
+            </tr>
+            <tr>
+              <td><code>MALICIOUS_EXFILTRATION</code></td>
+              <td>A hard indicator (honeytoken, known C2, proprietary-file match), or score ≥ 0.85, or a departing employee with score ≥ 0.70, or an unauthorized bulk transfer with score ≥ 0.70 and two corroborating signals.</td>
+            </tr>
+            <tr>
+              <td><code>SUSPICIOUS_ANOMALY_PENDING_HITL</code></td>
+              <td>Score ≥ 0.65, or a sensitive-data finding, or a ticket that exists but cannot be trusted alone. A human decides.</td>
+            </tr>
+            <tr>
+              <td><code>FALSE_POSITIVE</code></td>
+              <td>Everything else that reached Layer 3.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="security">
+    <div class="wrap">
+      <h2>Security model</h2>
+      <p class="sub">A detection system is itself a target. These controls are built in and covered by tests.</p>
+      <div class="grid g3">
+        <div class="card"><h3>Authentication and roles</h3><p>Every route needs an API key, compared as SHA-256 digests in constant time. Roles: <code>viewer</code>, <code>ingest</code>, <code>analyst</code>, <code>admin</code>. The analyst in the ledger is the authenticated caller, not a name in the body.</p></div>
+        <div class="card"><h3>Safe containment</h3><p>Dry run by default. Never touches protected users or addresses, capped per hour, and targets come from the case rather than the request. Statuses are honest: <code>APPLIED</code>, <code>DRY_RUN</code>, <code>SIMULATED</code>, <code>FAILED</code>.</p></div>
+        <div class="card"><h3>Tokenization</h3><p>HMAC-SHA256 pseudonyms, masked hosts and sanitized SQL. Production refuses to start without a real key.</p></div>
+        <div class="card"><h3>Input and abuse limits</h3><p>Every field is bounded and validated. Request bodies are capped, payload scanning is bounded, and per-key rate limits (429) and concurrency limits (503) apply.</p></div>
+        <div class="card"><h3>Tamper-evident audit</h3><p>Append-only hash chain, written durably, verified at start-up (a tampered file stops the service), with a <code>/readyz</code> check.</p></div>
+        <div class="card"><h3>Start-up gate</h3><p>With <code>APP_ENV=production</code> the service refuses to start without a tokenization key, API keys, a ledger path and authentication turned on.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section id="quality">
+    <div class="wrap">
+      <h2>Measured quality</h2>
+      <p class="sub">Model quality is measured, not asserted. <code>make benchmark</code> runs a labelled set of 720 events (120 malicious, including awkward benign cases like night batch jobs) through the real rules, feature store and models.</p>
+      <div class="metrics">
+        <div class="metric"><div class="v">0.983</div><div class="k">Ensemble ROC-AUC</div></div>
+        <div class="metric"><div class="v">0.879</div><div class="k">Ensemble PR-AUC</div></div>
+        <div class="metric"><div class="v">0.816 / 0.925</div><div class="k">Precision / recall at τ = 0.65</div></div>
+        <div class="metric"><div class="v">4.2%</div><div class="k">False-positive rate at τ = 0.65</div></div>
+        <div class="metric"><div class="v">100%</div><div class="k">Recall of dispatch to Layer 3</div></div>
+        <div class="metric"><div class="v">78.3%</div><div class="k">Alert volume not sent to Layer 3</div></div>
+      </div>
+      <div class="warn">
+        <strong>Read these with care.</strong> The data is synthetic and was written by the authors of the detector, so the numbers are optimistic
+        and say nothing about real traffic. The benchmark is a regression gate and a way to find blind spots, not a production claim.
+        The original design targets (false-positive rate below 0.001 at 95% recall, 85% alert reduction) are <strong>not met</strong> by this build.
+      </div>
+    </div>
+  </section>
+
+  <section id="honesty">
+    <div class="wrap">
+      <h2>What is and isn't real</h2>
+      <div class="grid g2">
+        <div class="card">
+          <h3 class="real">Real and tested</h3>
+          <ul>
+            <li>Validation and tokenization</li>
+            <li>Every Layer 1 rule</li>
+            <li>Feature windows and the three Layer 2 models, with calibration</li>
+            <li>Ticket authorization logic and the decision policy</li>
+            <li>Containment guard and case closure rules</li>
+            <li>Durable hash-chained ledger</li>
+            <li>Authentication, authorization, rate limiting, load shedding</li>
+            <li>Drift statistics (PSI, Wasserstein, KS) and the benchmark</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="sim">Stand-ins</h3>
+          <ul>
+            <li>Kafka, Redis, BigQuery and Vertex AI are in-process and bounded</li>
+            <li>Containment adapters (Neutron, identity provider, Vault) report <code>SIMULATED</code> until real ones are registered</li>
+            <li>Retraining is recorded as requested until a backend is registered</li>
+            <li>Change-ticket signatures are not verified</li>
+            <li>The agents are deterministic; the prompt registry is not wired to a model</li>
+          </ul>
+        </div>
+      </div>
+      <p class="sub" style="margin-top:20px">
+        Also worth knowing: the models are fitted on a synthetic benign baseline, steganography cannot be detected reliably from file bytes alone,
+        and the cockpit's Content-Security-Policy still allows inline scripts.
+      </p>
+    </div>
+  </section>
+
+  <section id="run">
+    <div class="wrap">
+      <h2>Run it yourself</h2>
+      <p class="sub">Development mode (authentication off, simulator on):</p>
+<pre>git clone https://github.com/sadiqgpasha89/Data-Exfiltration-detection.git
+cd Data-Exfiltration-detection
+make install
+make run            # http://127.0.0.1:8080</pre>
+      <p class="sub">Production-shaped (authentication on, durable ledger, read-only container):</p>
+<pre>make keys           # prints a tokenization key and an admin API key
+cp .env.example .env   # then edit
+docker compose --env-file .env up --build</pre>
+      <p class="sub">Tests: <code>make test</code> (180 tests, about 10 s, 95% line coverage), <code>make test-eval</code>, <code>make lint</code>, <code>make audit</code>.</p>
+
+      <div class="grid g3" style="margin-top:24px">
+        <a class="card" href="https://github.com/sadiqgpasha89/Data-Exfiltration-detection" style="text-decoration:none;color:inherit"><h3>Source code →</h3><p>Python, FastAPI, NumPy and scikit-learn.</p></a>
+        <a class="card" href="https://github.com/sadiqgpasha89/Data-Exfiltration-detection/blob/main/medium-article-exfiltration.md" style="text-decoration:none;color:inherit"><h3>The audit write-up →</h3><p>How 18 defects in the first version were found and fixed.</p></a>
+        <a class="card" href="https://github.com/sadiqgpasha89/Data-Exfiltration-detection/blob/main/exfiltration-diagrams.md" style="text-decoration:none;color:inherit"><h3>Diagrams →</h3><p>Architecture, event sequence, decision policy and containment (Mermaid).</p></a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>Sentinel Data Exfiltration Detection &amp; Prevention. Reference implementation.</span>
+    <a href="https://github.com/sadiqgpasha89/Data-Exfiltration-detection">github.com/sadiqgpasha89/Data-Exfiltration-detection</a>
+  </div>
+</footer>
+
+</body>
+</html>

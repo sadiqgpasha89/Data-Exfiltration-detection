@@ -1,5 +1,7 @@
 # Sentinel Data Exfiltration Detection & Prevention
 
+**Live project page (use case, architecture, results): https://sadiqgpasha89.github.io/Data-Exfiltration-detection/**
+
 A tri-layered system for detecting and stopping data exfiltration at a financial institution: a wire-speed rules layer at the edge, an anomaly-detection layer, and an investigation layer that reasons over identity, HR and change-management context and hands a human a signed case file.
 
 The design targets a hybrid deployment (on-premises OpenStack edge, Google Cloud enclave). **This repository is a working reference implementation of that design, not a deployed product.** The platform integrations (Kafka, Redis, BigQuery, Vertex AI, Neutron, the identity provider, Vault) are in-process stand-ins behind small interfaces; the detection logic, the decision policy, the security controls and the tests are real. [What is simulated](#what-is-and-is-not-real) is listed in full below.
